@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "会话费用账本",
+    "description": "每次回合结束自动记账，按会话保存可折叠的明细卡。",
+    "detail": "README.md"
+  }
+}

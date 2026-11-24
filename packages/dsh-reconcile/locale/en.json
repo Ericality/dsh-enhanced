@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Reconcile",
+    "description": "Turns turn ends into replayable reconcile records that survive restarts.",
+    "detail": "README.md"
+  }
+}

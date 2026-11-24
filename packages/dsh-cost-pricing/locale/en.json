@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Pricing library",
+    "description": "Parses official pricing, caches prices and computes cost.",
+    "detail": "README.md"
+  }
+}

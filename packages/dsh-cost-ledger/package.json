@@ -1,0 +1,60 @@
+{
+  "name": "@ericality/dsh-cost-ledger",
+  "version": "0.3.4",
+  "description": "会话账本：回合结束自动记账，每回合一张可折叠明细卡，历史按会话独立保存。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "^0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.2-rc.1",
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1"
+  },
+  "dshCompat": {
+    "host": "^0.2.2-rc.1",
+    "seams": [
+      "sessionAppend",
+      "eventTypeRegistry",
+      "projcache",
+      "rpcHandle",
+      "commands",
+      "tools"
+    ],
+    "blocked": [
+      "eventTypeRegistry"
+    ]
+  },
+  "dependencies": {
+    "@ericality/dsh-banner-kit": "0.1.0",
+    "@ericality/dsh-host-compat": "0.1.1",
+    "@ericality/dsh-cost-pricing": "0.1.0",
+    "@ericality/dsh-cost-tree": "0.1.1",
+    "@ericality/dsh-reconcile": "0.1.1"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  }
+}

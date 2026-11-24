@@ -1,0 +1,78 @@
+{
+  "name": "@ericality/dsh-bg-image",
+  "version": "8.0.0",
+  "description": "页面背景壁纸：每日（Bing 直连）、文件夹随机（every/daily/interval）与自定义图片，服务端保存且所有浏览器统一。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "^0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.2-rc.1",
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@ericality/dsh-host-compat": "0.1.1"
+  },
+  "dshCompat": {
+    "host": "^0.2.2-rc.1",
+    "seams": [
+      "rpcHandle"
+    ],
+    "blocked": []
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "README.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "icon": "./icon.svg",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ericality/dsh-enhanced.git"
+  },
+  "homepage": "https://github.com/Ericality/dsh-enhanced",
+  "publishConfig": {
+    "access": "public"
+  }
+}

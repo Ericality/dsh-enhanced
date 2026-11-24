@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Turn cost guard",
+    "description": "Warns about turn cost with dual thresholds and a continue-vs-new-session comparison.",
+    "detail": "README.md"
+  }
+}

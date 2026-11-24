@@ -1,0 +1,40 @@
+{
+  "name": "@ericality/dsh-cost-tier",
+  "version": "0.1.0",
+  "description": "时段规则库：高峰与低谷判定、节假日表与官方定价页锚点解析，纯函数零依赖。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./holidays.json": "./data/cn-holidays.json",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "manifestVersion": 1
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "^0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.2-rc.1",
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "dshCompat": {
+    "host": "^0.2.2-rc.1",
+    "requires": [],
+    "note": "纯函数库：不接触任何宿主面（无 seam/无 ctx/无网络）⇒ requires 为空集（不得自造键名）；本库的“能力”是其内置节假日表与锚点解析，健康度由 probe()/healthState() 如实上报"
+  },
+  "files": [
+    "lib",
+    "data",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  }
+}

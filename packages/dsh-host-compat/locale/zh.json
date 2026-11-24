@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "宿主适配层",
+    "description": "能力探测、三态降级与共享 seam，供插件判断宿主能力。",
+    "detail": "README.md"
+  }
+}

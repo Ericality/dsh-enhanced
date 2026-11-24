@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Session cost tree",
+    "description": "Aggregates subagent usage and cost along the session lineage.",
+    "detail": "README.md"
+  }
+}

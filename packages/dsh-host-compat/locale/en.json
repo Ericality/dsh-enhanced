@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Host compatibility layer",
+    "description": "Probes host capabilities, reports degraded states and shares seam helpers.",
+    "detail": "README.md"
+  }
+}

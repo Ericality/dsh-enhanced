@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Banner kit",
+    "description": "Shared banner event registration, deduplication and emit helpers.",
+    "detail": "README.md"
+  }
+}

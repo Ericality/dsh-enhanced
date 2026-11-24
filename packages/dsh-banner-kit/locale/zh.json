@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "横幅共享库",
+    "description": "横幅事件的类型注册、去重与发送助手，供各插件复用。",
+    "detail": "README.md"
+  }
+}

@@ -1,0 +1,112 @@
+name: publish-npm
+
+# 手动触发，按批 1 的五层依赖序发布 @ericality/dsh-* 包。
+#
+# ── 五层顺序（顺序即依赖序，不可打乱） ────────────────────────────────────────────
+#   l1 = dsh-cost-tier dsh-cost-tree dsh-reconcile
+#        纯库底座，无任何发布依赖
+#   l2 = dsh-host-compat
+#        所有可安装插件的共享底座；声明依赖它的包必须在它之后发
+#   l3 = dsh-cost-pricing dsh-banner-kit
+#        依赖 l1 的库（cost-pricing 依赖 cost-tier；banner-kit 依赖 host-compat）
+#   l4 = dsh-notice-banner dsh-bg-image dsh-quick-insert dsh-pwa dsh-mesh-panel
+#        依赖 l2/l3 的独立插件，互不依赖
+#   l5 = dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart
+#        费用与通知家族，依赖前面各层
+#
+# ── 幂等 / 重跑语义 ─────────────────────────────────────────────────────────────
+#   已存在的版本 npm 返回 403（EPUBLISHCONFLICT）⇒ 该包跳过、其余继续，工作流可安全重跑。
+#   发布不可逆：要重发必须先 bump 版本号，改 packages/<pkg>/package.json 后提交再触发。
+#   非 403 的真失败继续跑完其余包，结束时 exit 1（见末尾汇总）。
+on:
+  workflow_dispatch:
+    inputs:
+      layer:
+        description: "发布层 (l1=纯库 / l2=host-compat / l3=价格与横幅库 / l4=独立插件 / l5=费用与通知 / all=按序全部)"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - l1
+          - l2
+          - l3
+          - l4
+          - l5
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish layers
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          LAYER: ${{ github.event.inputs.layer }}
+        run: |
+          set -uo pipefail   # 故意不用 -e：单个包失败要继续其余包
+
+          # ── 五层定义（顺序即依赖序）
+          L1="dsh-cost-tier dsh-cost-tree dsh-reconcile"
+          L2="dsh-host-compat"
+          L3="dsh-cost-pricing dsh-banner-kit"
+          L4="dsh-notice-banner dsh-bg-image dsh-quick-insert dsh-pwa dsh-mesh-panel"
+          L5="dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart"
+          case "$LAYER" in
+            l1) PACKAGES="$L1" ;;
+            l2) PACKAGES="$L2" ;;
+            l3) PACKAGES="$L3" ;;
+            l4) PACKAGES="$L4" ;;
+            l5) PACKAGES="$L5" ;;
+            all) PACKAGES="$L1 $L2 $L3 $L4 $L5" ;;
+            *) echo "::error::unknown layer: $LAYER"; exit 1 ;;
+          esac
+
+          echo "layer=$LAYER"
+          echo "publishing (in order): $PACKAGES"
+
+          # ── 发布前体检：目录/包名/版本
+          fail_pre=0
+          for p in $PACKAGES; do
+            if [ ! -f "packages/$p/package.json" ]; then
+              echo "::error::packages/$p/package.json 不存在"; fail_pre=1; continue
+            fi
+            node -e '
+              const j=require("./packages/"+process.argv[1]+"/package.json");
+              const bad=[];
+              if(!/^@ericality\//.test(j.name)) bad.push("name 不是 @ericality/* : "+j.name);
+              if(j.private===true) bad.push("private:true ⇒ npm publish 会被拒");
+              if(bad.length){console.error("::error::"+process.argv[1]+" "+bad.join(" ; "));process.exit(1)}
+              console.log("  pre-check OK: "+process.argv[1]+" "+j.name+"@"+j.version);
+            ' "$p" || fail_pre=1
+          done
+          if [ "$fail_pre" != "0" ]; then echo "::error::发布前体检未通过，未执行任何 publish"; exit 1; fi
+
+          # ── 发布（403 ⇒ 跳过该包、其余继续；真失败也继续但最后 exit 1）
+          ok=0; skipped=0; failed=0
+          for p in $PACKAGES; do
+            echo "== npm publish $p =="
+            log="$(mktemp)"
+            if (cd "packages/$p" && npm publish --access public) > "$log" 2>&1; then
+              cat "$log"; echo "OK: $p"; ok=$((ok+1))
+            elif grep -qE '403|EPUBLISHCONFLICT|cannot publish over the previously published' "$log"; then
+              cat "$log"; echo "SKIP(already published, can rerun safely): $p"; skipped=$((skipped+1))
+            else
+              cat "$log"; echo "::error::FAIL(non-403): $p — continuing with the rest"; failed=$((failed+1))
+            fi
+            rm -f "$log"
+          done
+
+          echo "layer $LAYER done — ok=$ok skipped(already-published)=$skipped failed=$failed"
+          if [ "$failed" != "0" ]; then
+            echo "::error::$failed 个包发布失败（非 403）⇒ 修因后 bump 版本再重跑该层"
+            exit 1
+          fi

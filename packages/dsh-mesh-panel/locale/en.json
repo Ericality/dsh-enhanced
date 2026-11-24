@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Device mesh panel",
+    "description": "Pairs devices into a read-only mesh panel for viewing peer sessions.",
+    "detail": "README.md"
+  }
+}

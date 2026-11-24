@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "多会话费用统计",
+    "description": "按时间窗口统计各会话花费，并按高峰与低谷分别计价。",
+    "detail": "README.md"
+  }
+}

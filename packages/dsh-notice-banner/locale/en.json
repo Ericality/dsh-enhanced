@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Banner cards",
+    "description": "Renders cost, queue and notification events as collapsible in-chat banner cards.",
+    "detail": "README.md"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Quick insert",
+    "description": "Adds a row of quick buttons above the composer that insert text at the cursor.",
+    "detail": "README.md"
+  }
+}

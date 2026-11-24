@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Graceful restart",
+    "description": "Waits until sessions and subagents are idle before restarting, without interrupting turns.",
+    "detail": "README.md"
+  }
+}

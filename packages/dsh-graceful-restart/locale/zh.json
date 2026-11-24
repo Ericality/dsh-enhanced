@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "优雅重启",
+    "description": "等所有会话与子 agent 空闲后再退出重启，不打断进行中的回合。",
+    "detail": "README.md"
+  }
+}

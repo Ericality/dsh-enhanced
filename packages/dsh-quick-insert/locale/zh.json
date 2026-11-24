@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "输入框快捷插入",
+    "description": "在输入框上方提供一行快捷按钮，点击把文本插入光标处。",
+    "detail": "README.md"
+  }
+}

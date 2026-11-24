@@ -1,0 +1,44 @@
+{
+  "name": "@ericality/dsh-banner-kit",
+  "version": "0.1.0",
+  "description": "横幅共享库：事件类型幂等注册与唯一 rev 语义，零第三方依赖，顶层不抛异常。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "manifestVersion": 1
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "^0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.2-rc.1",
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "dshCompat": {
+    "host": "^0.2.2-rc.1",
+    "seams": [
+      "sessionEvents",
+      "sessionAppend",
+      "eventTypeRegistry"
+    ]
+  },
+  "dependencies": {
+    "@ericality/dsh-host-compat": "0.1.1"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,4 @@
+# 批 1 发布包：单个 insert 行，不含任何部署相关默认值（敏感项一律留空，由使用方在配置页填写）。
+- insert:
+    - id: notify
+      name: '@ericality/dsh-notify'

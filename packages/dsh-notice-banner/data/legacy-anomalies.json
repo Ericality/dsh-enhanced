@@ -1,0 +1,638 @@
+{
+ "v": 1,
+ "note": "批4 段A **历史存量封闭清单**（只减不增；新增只能走用户签字流程）。逐张身份＝(sid,owner,kind,at)；`no-anchor` 类的 kind/at 取自同会话同 owner 的 cards[](placeState=unplaced) **按索引序 1:1 配对**（6 组计数逐一相等 ⇒ 组内任何双射排除同一集合 ⇒ 计数不受配对次序影响）。",
+ "generatedAt": "2026-09-26T11:10:00Z",
+ "source": "$DSH_HOME/notice-state/index/*.json（只读枚举）",
+ "rowlessUnknown": 70,
+ "noAnchor": 17,
+ "noAnchorPaired": 17,
+ "total": 87,
+ "entries": [
+  {
+   "cls": "no-anchor",
+   "sid": "session-31bba077-3d72-4e1d-b9af-65882fb1ae3b",
+   "owner": "dsh-sessions-cost",
+   "kind": "costs",
+   "at": 1789988632890,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789623757514,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789623769024,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789623778756,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789653197914,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789653202994,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789653265678,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789653272027,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-9f6cd90a-5bb2-46bf-b8db-31757ff5acd7",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1790173117314,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789912328744,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789913377660,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789913557221,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789913904496,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-cost-guard",
+   "kind": "balance",
+   "at": 1789914277885,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789914624937,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789914804922,
+   "paired": true
+  },
+  {
+   "cls": "no-anchor",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-balance",
+   "kind": "balance",
+   "at": 1789915569596,
+   "paired": true
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-484048ee-78a4-4d50-aafc-8f9ec69bfd28",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789867549008
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-4d51dec4-5971-4c34-9742-378f17a29b4e",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789875243423
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-502cb3b3-b294-4a67-a539-390346cef1ce",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789867370810
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789623496794
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623524742
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623526743
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623536744
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789623796831
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789623847819
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789623851005
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623952945
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623954946
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789623956502
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789624032273
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789624034274
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789624042403
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789640053390
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789640060282
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789640081114
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789640108613
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789645871364
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789645884930
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789645886931
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789645896930
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789645923025
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789645926500
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646060216
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646062122
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646450609
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646458005
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646466174
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646764986
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646782636
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646810495
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646902947
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-517b7894-6406-4566-9862-7b286fa9f578",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789646907764
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789787875387
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789787885556
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789787887557
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789787897558
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789790962266
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789790972258
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789790974258
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-graceful-restart",
+   "kind": "restart",
+   "at": 1789790984259
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-810db2a5-8eda-4875-992c-d88f54d482f6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789807904700
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-852da317-01ee-49e3-a9c6-415399df072e",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789826960500
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-a68e30d6-3d2c-4ac8-9923-159781515a65",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789785272064
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-a68e30d6-3d2c-4ac8-9923-159781515a65",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789786278746
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789911761608
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789912307307
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789912316059
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789912612195
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789913724553
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789914084536
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789914444623
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789915591989
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789915619095
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789915646042
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789915672879
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789915699980
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789916297133
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789916484894
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789917260758
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789917272325
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789917283856
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789917295625
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-e17d7a90-1bc9-404d-9934-1cf96bb30582",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789917307191
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-f099398c-5884-4373-a300-43c6d8d887b6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789711811950
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-f099398c-5884-4373-a300-43c6d8d887b6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789711822740
+  },
+  {
+   "cls": "rowless-unknown",
+   "sid": "session-f099398c-5884-4373-a300-43c6d8d887b6",
+   "owner": "dsh-taskqueue",
+   "kind": "queue",
+   "at": 1789711824282
+  }
+ ]
+}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "通知中枢",
+    "description": "把回合完成、提问、中断推送到手机，并在本地横幅里汇总问答。",
+    "detail": "README.md"
+  }
+}

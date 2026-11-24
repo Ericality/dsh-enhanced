@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "横幅卡片渲染",
+    "description": "把费用、队列、通知等事件渲染成可折叠的会话横幅卡。",
+    "detail": "README.md"
+  }
+}

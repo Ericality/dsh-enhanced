@@ -1,0 +1,4 @@
+# 批 1 发布包：单个 insert 行；每日源默认 Bing 直连，不使用任何自有服务。
+- insert:
+    - id: bg-image
+      name: '@ericality/dsh-bg-image'

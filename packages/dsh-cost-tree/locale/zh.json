@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "会话树费用库",
+    "description": "按父会话血缘汇总子 agent 的用量与费用。",
+    "detail": "README.md"
+  }
+}

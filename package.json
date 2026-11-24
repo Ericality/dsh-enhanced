@@ -1,0 +1,18 @@
+{
+  "name": "dsh-enhanced",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ericality's dsh (DeepSeek Harness) enhanced plugin collection — server plugins, client bundles and shared libraries.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ericality/dsh-enhanced.git"
+  },
+  "homepage": "https://github.com/Ericality/dsh-enhanced",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.9.0"
+  }
+}

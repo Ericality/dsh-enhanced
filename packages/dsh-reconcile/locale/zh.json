@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "对账共享库",
+    "description": "把回合结束变成可重放的对账记录，重启后不丢提醒与记账。",
+    "detail": "README.md"
+  }
+}

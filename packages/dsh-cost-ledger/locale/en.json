@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Session cost ledger",
+    "description": "Books every finished turn and keeps a foldable per-session ledger card.",
+    "detail": "README.md"
+  }
+}

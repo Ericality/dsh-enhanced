@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Multi-session cost report",
+    "description": "Reports per-session spend over a time window with peak and off-peak pricing.",
+    "detail": "README.md"
+  }
+}

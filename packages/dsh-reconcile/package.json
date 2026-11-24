@@ -1,0 +1,33 @@
+{
+  "name": "@ericality/dsh-reconcile",
+  "version": "0.1.1",
+  "description": "对账共享库：把回合结束变成可重放的对账，重启后不丢记账、提醒与通知。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "manifestVersion": 1
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "^0.2.2-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.2-rc.1",
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "BSD-3-Clause",
+  "publishConfig": {
+    "access": "public"
+  }
+}

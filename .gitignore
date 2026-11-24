@@ -1,0 +1,30 @@
+# deps / build
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# logs & debug
+*.log
+log/
+
+# credentials & secrets — NEVER commit
+.credentials*
+.env
+ENV.md
+**/*.key
+**/*.pem
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# backups & scratch
+*.bak
+*.orig
+tmp/
+
+# release artifacts (not committed)
+archive/
+dist/

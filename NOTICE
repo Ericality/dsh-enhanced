@@ -1,0 +1,11 @@
+# NOTICE
+
+Some packages in this monorepo evolved from plugins of
+[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
+("Everything is a Plugin" · MIT License · Copyright (c) 2026 DeepSeek).
+
+Per the MIT License, the upstream copyright notice and permission notice are
+retained in the corresponding packages where substantial portions of upstream
+code remain (see each package's README / source headers).
+
+This monorepo itself is MIT licensed (see LICENSE).
