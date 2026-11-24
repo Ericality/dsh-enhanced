@@ -1,9 +1,9 @@
 # @ericality/dsh-graceful-restart
 
-安装：`dsh plugin --profile web add @ericality/dsh-graceful-restart@0.1.11`
+安装：`dsh plugin --profile web add @ericality/dsh-graceful-restart@0.1.12`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-graceful-restart@0.1.11`
+安装：`dsh plugin --profile web add @ericality/dsh-graceful-restart@0.1.12`
 
 
 Graceful host restart for DSH — 优雅重启排程：等所有会话/子 agent 空闲、用户确认后，静默观察一段无活动窗口再经宿主 `appExit` 自然退出，不掐断进行中的回合（重启后无 interrupted 合成、不浪费 token）。
@@ -27,8 +27,15 @@ npm i @ericality/dsh-graceful-restart
 
 ## 配置
 
-- 轮询间隔 2s、静默观察窗口 10s、总超时 15 分钟（代码内常量）。
-- debug 日志默认关闭；设置环境变量 `DSH_DEBUG_LOG`（如 `/path/to/debug.log`）开启。
+插件详情页有配置卡（Plugins 页 → 本插件 → 配置），保存后下一次排程即按新配置执行，无需重启；已排程中的重启不因改配置取消。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `quietWindowSec` | `10` | 所有会话空闲后连续静默多少秒才退出（3 到 120） |
+| `timeoutMin` | `15` | 排程后多久未确认自动取消（1 到 120 分钟） |
+| `allowAgentTrigger` | `true` | 关闭后模型工具不能发起重启，用户命令仍可用 |
+
+配置落 `$DSH_HOME/plugin-data/graceful-restart/settings.json`（`schemaVersion 1`），读写端点 `/api/graceful-restart/config/get`、`/set`、`/reset`；坏值由服务端拒绝且原值不变。轮询间隔仍为 2s 代码常量；debug 日志默认关闭，设置环境变量 `DSH_DEBUG_LOG` 开启。
 
 ## 依赖
 

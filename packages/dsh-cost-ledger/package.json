@@ -1,11 +1,14 @@
 {
   "name": "@ericality/dsh-cost-ledger",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "会话账本：回合结束自动记账，每回合一张可折叠明细卡，历史按会话独立保存。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json"
@@ -14,6 +17,14 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
     }
   },
   "engines": {
@@ -51,8 +62,10 @@
     "cordis.patch.yml",
     "locale",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg"
   ],
+  "icon": "./icon.svg",
   "license": "BSD-3-Clause",
   "publishConfig": {
     "access": "public"

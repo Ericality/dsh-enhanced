@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
@@ -6,6 +6,104 @@ import { join as joinPath } from "node:path";
 /** 数据根：DSH_HOME（缺省 ~/.dsh）；本插件自有数据落 <root>/plugin-data/balance/。 */
 const DSH_HOME = process.env.DSH_HOME || joinPath(homedir(), ".dsh");
 const PLUGIN_DATA = joinPath(DSH_HOME, "plugin-data", "balance");
+
+// ---------- 插件配置（/api/balance/config，落 plugin-data/balance/settings.json，schemaVersion 1） ----------
+const SETTINGS_FILE = process.env.DSH_BALANCE_SETTINGS_FILE || joinPath(PLUGIN_DATA, "settings.json");
+const SETTINGS_SCHEMA = 1;
+const SETTINGS_DEFAULTS = Object.freeze({ alertThresholdYuan: 0, pricingCacheMinutes: 30, includeSubagents: true });
+const SETTINGS_NUMBERS = Object.freeze({ alertThresholdYuan: [0, 1000000], pricingCacheMinutes: [1, 1440] });
+const SETTINGS_BOOLS = Object.freeze(["includeSubagents"]);
+const settingsState = { mtimeMs: -1, value: { ...SETTINGS_DEFAULTS } };
+
+/** 归一化：缺省/坏值一律回默认值；范围外截断由 validate 在写入前拦截。 */
+function cleanSettings(input) {
+	const src = input && typeof input === "object" ? input : {};
+	const out = { ...SETTINGS_DEFAULTS };
+	for (const [key, [min, max]] of Object.entries(SETTINGS_NUMBERS)) {
+		const v = src[key];
+		if (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max) out[key] = v;
+	}
+	for (const key of SETTINGS_BOOLS) if (typeof src[key] === "boolean") out[key] = src[key];
+	return out;
+}
+
+/** 现读配置（按 mtime 失效；文件缺失回默认值，永不 throw）。 */
+async function readSettings() {
+	try {
+		const st = await stat(SETTINGS_FILE);
+		if (st.mtimeMs === settingsState.mtimeMs) return settingsState.value;
+		const raw = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+		const clean = cleanSettings(raw && typeof raw === "object" && raw.settings ? raw.settings : raw);
+		settingsState.mtimeMs = st.mtimeMs;
+		settingsState.value = clean;
+		return clean;
+	} catch {
+		return { ...SETTINGS_DEFAULTS };
+	}
+}
+
+/** 落盘（合并后写全量，schemaVersion 1）。 */
+async function writeSettings(patch) {
+	const next = cleanSettings({ ...(await readSettings()), ...(patch || {}) });
+	try {
+		mkdirSync(PLUGIN_DATA, { recursive: true });
+		await writeFile(SETTINGS_FILE, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA, settings: next }, null, 2), "utf8");
+		settingsState.mtimeMs = -1;
+		settingsState.value = next;
+		return { ok: true, settings: next };
+	} catch (err) {
+		return { ok: false, message: String(err?.message ?? err) };
+	}
+}
+
+/** set 的前置校验：类型与范围不符 ⇒ ok:false（原值不变）。 */
+function validateSettings(payload) {
+	const src = payload && typeof payload === "object" && payload.settings && typeof payload.settings === "object" ? payload.settings : payload;
+	if (!src || typeof src !== "object") return { ok: false, message: "缺少配置对象" };
+	const patch = {};
+	for (const [key, value] of Object.entries(src)) {
+		if (Object.hasOwn(SETTINGS_NUMBERS, key)) {
+			const [min, max] = SETTINGS_NUMBERS[key];
+			if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return { ok: false, message: `${key} 必须是 ${min} 到 ${max} 之间的数字` };
+			patch[key] = value;
+		} else if (SETTINGS_BOOLS.includes(key)) {
+			if (typeof value !== "boolean") return { ok: false, message: `${key} 必须是布尔值` };
+			patch[key] = value;
+		} else {
+			return { ok: false, message: `未知字段 ${key}` };
+		}
+	}
+	if (!Object.keys(patch).length) return { ok: false, message: "没有可保存的字段" };
+	return { ok: true, patch };
+}
+
+/** 注册 /api/balance/config 的 get / set / reset（经 host-compat 通道面；失败如实 warn）。 */
+function registerConfigApi(ctx) {
+	const handler = async (endpoint, payload) => {
+		try {
+			if (endpoint === "get") return { ok: true, value: { settings: await readSettings(), defaults: { ...SETTINGS_DEFAULTS } } };
+			if (endpoint === "reset") {
+				const r = await writeSettings({ ...SETTINGS_DEFAULTS });
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			if (endpoint === "set") {
+				const v = validateSettings(payload);
+				if (!v.ok) return { ok: false, error: { code: "bad-request", message: v.message } };
+				const r = await writeSettings(v.patch);
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			return { ok: false, error: { code: "bad-request", message: `未知端点 ${endpoint}` } };
+		} catch (err) {
+			ctx.logger?.warn?.(`dsh-balance: /api/balance/config ${endpoint} 失败: ${String(err?.message ?? err)}`);
+			return { ok: false, error: { code: "internal", message: String(err?.message ?? err) } };
+		}
+	};
+	import("@ericality/dsh-host-compat/seams").then((seams) => {
+		if (typeof seams?.channelFace !== "function") { ctx.logger?.warn?.("dsh-balance: host-compat 未提供 channelFace，/api/balance/config 不可用"); return; }
+		const face = seams.channelFace(ctx, "/balance/config", ["get", "set", "reset"], handler);
+		if (!face?.ok) ctx.logger?.warn?.(`dsh-balance: /api/balance/config 注册失败 ${JSON.stringify(face?.results ?? [])}`);
+	}).catch((err) => { ctx.logger?.warn?.(`dsh-balance: host-compat 加载失败 ${String(err?.message ?? err)}`); });
+}
 import { createHash } from "node:crypto";   // ★G1-b（2026-09-20）：逐卡身份 `cardId`
 
 /**
@@ -37,7 +135,7 @@ import { createHash } from "node:crypto";   // ★G1-b（2026-09-20）：逐卡�
  *   balance 横幅携带结构化 stats(统计格) + kv(键值行) + metaText + advice 字段。
  */
 export const name = "dsh-balance";
-export const inject = ["commands"];
+export const inject = ["commands", "connection"];
 
 // ================= 共享库动态加载 (契约 §10.1: 禁静态 import 共享包) =================
 /** 本插件告警出口 (apply 内接 ctx.logger.warn; 未接时退回 console.warn) */
@@ -106,12 +204,22 @@ export async function loadReconcile() {
 	return reconcileMod;
 }
 
-/** 取价 (RD-43): 共享库 loadPrices (缓存/解析/回退链全在库里) → 缺库降级内置常量。永不 throw */
+/** 取价 (RD-43): 共享库 loadPrices (缓存/解析/回退链全在库里) → 缺库降级内置常量。永不 throw
+ *  配置项 pricingCacheMinutes: 本插件在共享库之上再按配置记忆一次；配置短于共享库 30 分钟缓存时传 force 绕缓存。 */
+let priceMemo = null; // { at, prices, source }
 async function resolvePrices(opts) {
+	const settings = await readSettings();
+	const ttlMs = Math.max(1, Number(settings.pricingCacheMinutes) || 30) * 60000;
+	if (priceMemo && Date.now() - priceMemo.at < ttlMs) return { prices: priceMemo.prices, source: priceMemo.source };
 	const m = await pricingLib();
 	try {
-		const r = await m.loadPrices(opts);
-		if (r?.prices) return { prices: r.prices, source: r.source ?? "内置常量" };
+		const callOpts = (opts && typeof opts === "object") ? { ...opts } : {};
+		if (ttlMs < 30 * 60000) callOpts.force = true;
+		const r = await m.loadPrices(callOpts);
+		if (r?.prices) {
+			priceMemo = { at: Date.now(), prices: r.prices, source: r.source ?? "内置常量" };
+			return { prices: priceMemo.prices, source: priceMemo.source };
+		}
 	} catch (err) {
 		LOG(`取价库调用异常 → 用内置常量: ${String(err?.message ?? err)}`);
 	}
@@ -352,6 +460,10 @@ async function collect() {
 	const prices = priceInfo?.prices ?? FALLBACK_PRICES;
 	const priceSource = priceInfo?.source ?? "内置常量";
 
+	const settings = await readSettings();
+	const alertLine = settings.alertThresholdYuan > 0 && cny !== null && cny < settings.alertThresholdYuan
+		? `余额低于阈值: 当前 ¥${fmtMoney(cny)} < 阈值 ¥${fmtMoney(settings.alertThresholdYuan)}`
+		: "";
 	const now = Date.now();
 	const lastCheckAt = state?.lastCheckAt ?? null;
 	const interval = lastCheckAt ? { from: lastCheckAt, to: now, ms: now - lastCheckAt } : null;
@@ -394,6 +506,7 @@ async function collect() {
 	});
 
 	return {
+		settings, alertLine,
 		usage, cny, available, interval, tier, p, prices,
 		delta, deltaCost,
 		totalCost: costOf(usage, p),
@@ -465,6 +578,7 @@ async function loadBannerKit() {
 }
 
 export async function apply(ctx) {
+	registerConfigApi(ctx);
 	// 插件告警出口 (RD-43/RD-44 降级必须可观测, §2.3 禁止静默)
 	logWarn = (m) => { try { ctx.logger?.warn?.(m); } catch { /* noop */ } };
 	// RD-43: 启动期探测共享取价库 —— 缺库立即 warn (不等首次命令才暴露)
@@ -488,6 +602,7 @@ export async function apply(ctx) {
 			const d = await collect();
 			const fallback = [];
 			fallback.push(`余额: ${d.cny !== null ? `¥${fmtMoney(d.cny)}` : "查询失败"}${d.available !== null ? ` (可用: ${d.available ? "是" : "否"})` : ""}`);
+			if (d.alertLine) fallback.push(d.alertLine);
 
 			if (d.interval && d.delta) {
 				fallback.push(`间隔: ${fmtElapsed(d.interval.ms)} (${beijingHm(d.interval.from)}→${beijingHm(d.interval.to)}) · 时段: ${d.tier}`);
@@ -530,7 +645,7 @@ export async function apply(ctx) {
 				metaText: d.interval && d.delta
 					? `间隔 ${fmtElapsed(d.interval.ms)} · ${beijingHm(d.interval.from)} → ${beijingHm(d.interval.to)} · 定价来源: ${d.priceSource}`
 					: `定价来源: ${d.priceSource}`,
-				advice: ""
+				advice: d.alertLine || ""
 			});
 			if (!ok) return { kind: "success", text: fallback.join("\n") };
 			return { kind: "success", text: "" };
@@ -545,6 +660,7 @@ export async function apply(ctx) {
 			const d = await collect();
 			const fallback = [];
 			fallback.push(`余额: ${d.cny !== null ? `¥${fmtMoney(d.cny)}` : "查询失败"}${d.available !== null ? ` (可用: ${d.available ? "是" : "否"})` : ""}`);
+			if (d.alertLine) fallback.push(d.alertLine);
 
 			// 优先展示最近一次 /balance 记账的间隔明细 (10 分钟内), 解决
 			// "先 /balance 简洁, 再 /balance-detail 想看同一段分解" 的需求。
@@ -611,7 +727,7 @@ export async function apply(ctx) {
 				stats,
 				kv,
 				metaText: metaParts.join(" · "),
-				advice: `定价: ${d.priceSource} · 高峰 输入${d.prices.peak.inputMiss} / 缓存${d.prices.peak.inputHit} / 输出${d.prices.peak.output} · 低谷 ${d.prices.offpeak.inputMiss} / ${d.prices.offpeak.inputHit} / ${d.prices.offpeak.output}（¥/百万）`
+				advice: `${d.alertLine ? d.alertLine + " · " : ""}定价: ${d.priceSource} · 高峰 输入${d.prices.peak.inputMiss} / 缓存${d.prices.peak.inputHit} / 输出${d.prices.peak.output} · 低谷 ${d.prices.offpeak.inputMiss} / ${d.prices.offpeak.inputHit} / ${d.prices.offpeak.output}（¥/百万）`
 			});
 			if (!ok) return { kind: "success", text: fallback.join("\n") };
 			return { kind: "success", text: "" };
@@ -628,9 +744,11 @@ export async function apply(ctx) {
 				return { kind: "error", text: "无法确定当前会话 (agent.session.id 为空)" };
 			}
 			const usage = await readSessionUsage(sessionId);
+			const settings = await readSettings();
 			// 树聚合 (设计 §3.1): 当前会话 + 全部后代(subagent) projcache 四类 → agg;
 			// 库缺失/异常/无后代 → agg=null/不可用 → 完全走现状 (含 usage null 的 error 路径)。
-			const treeMod = await loadCostTree();
+			// 配置 includeSubagents=false ⇒ 不做树聚合, 只算本会话。
+			const treeMod = settings.includeSubagents ? await loadCostTree() : null;
 			let agg = null;
 			if (treeMod) {
 				try { agg = await treeMod.subtreeTotalsFromProjcache(sessionId, { force: true }); }

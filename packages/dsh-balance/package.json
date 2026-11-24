@@ -1,11 +1,14 @@
 {
   "name": "@ericality/dsh-balance",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "余额与费用看板：/balance、/balance-detail 与 /cost 命令，展示实时余额、用量差值与费用估算。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json"
@@ -14,6 +17,14 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
     }
   },
   "engines": {
@@ -36,8 +47,10 @@
     "cordis.patch.yml",
     "locale",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg"
   ],
+  "icon": "./icon.svg",
   "license": "BSD-3-Clause",
   "publishConfig": {
     "access": "public"

@@ -1,5 +1,6 @@
 import { mkdirSync, appendFileSync, chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { readFile, stat, writeFile } from "node:fs/promises";
 /** ★批7 `T15`（`#A342`）：**稳定身份** `cardId` —— **同一次排程的 `scheduleId` 恒定**（排程卡与 `phase="invalid"` 自扫卡**共用同一身份** ⇒ 相位更新原地继承，不跳位）；缺 `scheduleId` ⇒ 显式 `null`。 */
 const _cardIdOfSchedule = (scheduleId) => ((scheduleId === null || scheduleId === undefined || scheduleId === "") ? null
 	: createHash("sha256").update("dsh-graceful-restart|restart|" + String(scheduleId)).digest("hex").slice(0, 32));
@@ -9,6 +10,105 @@ import { dirname, join } from "node:path";
 /** 数据根：DSH_HOME（缺省 ~/.dsh）；本插件自有数据落 <root>/plugin-data/graceful-restart/。 */
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), ".dsh");
 const PLUGIN_DATA = join(DSH_HOME, "plugin-data", "graceful-restart");
+
+// ---------- 插件配置（/api/graceful-restart/config，落 plugin-data/graceful-restart/settings.json，schemaVersion 1） ----------
+const SETTINGS_FILE = process.env.DSH_GR_SETTINGS_FILE || join(PLUGIN_DATA, "settings.json");
+const SETTINGS_SCHEMA = 1;
+// 默认值 = 改造前常量（QUIET_WINDOW_MS=10s、TIMEOUT_MS=15min、允许模型工具触发）
+const SETTINGS_DEFAULTS = Object.freeze({ quietWindowSec: 10, timeoutMin: 15, allowAgentTrigger: true });
+const SETTINGS_NUMBERS = Object.freeze({ quietWindowSec: [3, 120], timeoutMin: [1, 120] });
+const SETTINGS_BOOLS = Object.freeze(["allowAgentTrigger"]);
+const settingsState = { mtimeMs: -1, value: { ...SETTINGS_DEFAULTS } };
+
+/** 归一化：缺省/坏值一律回默认值。 */
+function cleanSettings(input) {
+	const src = input && typeof input === "object" ? input : {};
+	const out = { ...SETTINGS_DEFAULTS };
+	for (const [key, [min, max]] of Object.entries(SETTINGS_NUMBERS)) {
+		const v = src[key];
+		if (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max) out[key] = v;
+	}
+	for (const key of SETTINGS_BOOLS) if (typeof src[key] === "boolean") out[key] = src[key];
+	return out;
+}
+
+/** 现读配置（按 mtime 失效；文件缺失回默认值，永不 throw）。 */
+async function readSettings() {
+	try {
+		const st = await stat(SETTINGS_FILE);
+		if (st.mtimeMs === settingsState.mtimeMs) return settingsState.value;
+		const raw = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+		const clean = cleanSettings(raw && typeof raw === "object" && raw.settings ? raw.settings : raw);
+		settingsState.mtimeMs = st.mtimeMs;
+		settingsState.value = clean;
+		return clean;
+	} catch {
+		return { ...SETTINGS_DEFAULTS };
+	}
+}
+
+/** 落盘（合并后写全量，schemaVersion 1）。 */
+async function writeSettings(patch) {
+	const next = cleanSettings({ ...(await readSettings()), ...(patch || {}) });
+	try {
+		mkdirSync(PLUGIN_DATA, { recursive: true });
+		await writeFile(SETTINGS_FILE, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA, settings: next }, null, 2), "utf8");
+		settingsState.mtimeMs = -1;
+		settingsState.value = next;
+		return { ok: true, settings: next };
+	} catch (err) {
+		return { ok: false, message: String(err?.message ?? err) };
+	}
+}
+
+/** set 的前置校验：类型与范围不符 ⇒ ok:false（原值不变）。 */
+function validateSettings(payload) {
+	const src = payload && typeof payload === "object" && payload.settings && typeof payload.settings === "object" ? payload.settings : payload;
+	if (!src || typeof src !== "object") return { ok: false, message: "缺少配置对象" };
+	const patch = {};
+	for (const [key, value] of Object.entries(src)) {
+		if (Object.hasOwn(SETTINGS_NUMBERS, key)) {
+			const [min, max] = SETTINGS_NUMBERS[key];
+			if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return { ok: false, message: `${key} 必须是 ${min} 到 ${max} 之间的数字` };
+			patch[key] = value;
+		} else if (SETTINGS_BOOLS.includes(key)) {
+			if (typeof value !== "boolean") return { ok: false, message: `${key} 必须是布尔值` };
+			patch[key] = value;
+		} else {
+			return { ok: false, message: `未知字段 ${key}` };
+		}
+	}
+	if (!Object.keys(patch).length) return { ok: false, message: "没有可保存的字段" };
+	return { ok: true, patch };
+}
+
+/** 注册 /api/graceful-restart/config 的 get / set / reset（经 host-compat 通道面；失败如实 warn）。 */
+function registerConfigApi(ctx) {
+	const handler = async (endpoint, payload) => {
+		try {
+			if (endpoint === "get") return { ok: true, value: { settings: await readSettings(), defaults: { ...SETTINGS_DEFAULTS } } };
+			if (endpoint === "reset") {
+				const r = await writeSettings({ ...SETTINGS_DEFAULTS });
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			if (endpoint === "set") {
+				const v = validateSettings(payload);
+				if (!v.ok) return { ok: false, error: { code: "bad-request", message: v.message } };
+				const r = await writeSettings(v.patch);
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			return { ok: false, error: { code: "bad-request", message: `未知端点 ${endpoint}` } };
+		} catch (err) {
+			ctx.logger?.warn?.(`dsh-graceful-restart: /api/graceful-restart/config ${endpoint} 失败: ${String(err?.message ?? err)}`);
+			return { ok: false, error: { code: "internal", message: String(err?.message ?? err) } };
+		}
+	};
+	import("@ericality/dsh-host-compat/seams").then((seams) => {
+		if (typeof seams?.channelFace !== "function") { ctx.logger?.warn?.("dsh-graceful-restart: host-compat 未提供 channelFace，/api/graceful-restart/config 不可用"); return; }
+		const face = seams.channelFace(ctx, "/graceful-restart/config", ["get", "set", "reset"], handler);
+		if (!face?.ok) ctx.logger?.warn?.(`dsh-graceful-restart: /api/graceful-restart/config 注册失败 ${JSON.stringify(face?.results ?? [])}`);
+	}).catch((err) => { ctx.logger?.warn?.(`dsh-graceful-restart: host-compat 加载失败 ${String(err?.message ?? err)}`); });
+}
 const LOG_DIR = join(DSH_HOME, "logs", "graceful-restart");
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
@@ -279,6 +379,7 @@ async function reportCapability(ctx) {
 }
 
 export const apply = (ctx) => {
+	registerConfigApi(ctx);
 	// ★`#A193` 件③（2026-09-23 obs3S7；用户令「有问题就修问题，不要藏起来」）：**补 host-compat 申报面**。
 	//   本插件此前 **0 处 `requires`** ⇒ 不参加能力探测 ⇒ 「拿不到 `sessionEvents`（工具面行身份的唯一来源）」是**静默的**。
 	//   现申报 `sessionEvents`：缺失 ⇒ **如实 `DEGRADED` ＋ 面板可见**（`report`），且工具面**如实无行身份**（不猜、不静默）。
@@ -520,10 +621,10 @@ export const apply = (ctx) => {
 			if (intent.quietSince === null) {
 				intent.quietSince = Date.now(); // 首次全 idle → 开始 10s 计时
 				pushBanner({ phase: "observing", statusNote: "" }); // v0.1.7: 清除原因, 重新倒计时
-				debug("quiet observation: all idle, 10s window starts");
+				debug(`quiet observation: all idle, ${Math.round((intent.quietWindowMs ?? QUIET_WINDOW_MS) / 1000)}s window starts`);
 				return;
 			}
-			if (Date.now() - intent.quietSince >= QUIET_WINDOW_MS) {
+			if (Date.now() - intent.quietSince >= (intent.quietWindowMs ?? QUIET_WINDOW_MS)) {
 				clearInterval(timer);
 				intent.phase = "exiting";
 				pushBanner({ phase: "exiting" });
@@ -552,11 +653,15 @@ export const apply = (ctx) => {
 	/** 新建意图并启动流程 (命令/工具共用)
 	 *  ★`#A193` 件②（2026-09-23）：第 4 参 `row` ＝ **本次排程的行身份**（`{ commandId }` 命令面 ／ `{ anchorSeq }` 工具面）；
 	 *  取不到 ⇒ `null`（**不猜**）⇒ 该卡如实无行身份，由写入闸门如实处理（撤族级豁免后＝拒收 ＋ 面板可见）。 */
-	function schedule(reason, sessionId, confirmedByAgent, row = null) {
+	function schedule(reason, sessionId, confirmedByAgent, row = null, settings = null) {
+		const quietWindowMs = Math.max(1000, Math.round((Number(settings?.quietWindowSec) || SETTINGS_DEFAULTS.quietWindowSec) * 1000));
+		const timeoutMs = Math.max(60000, Math.round((Number(settings?.timeoutMin) || SETTINGS_DEFAULTS.timeoutMin) * 60000));
 		intent = {
 			reason,
 			askedAt: Date.now(),
-			cutoffMs: Date.now() + TIMEOUT_MS,
+			// 配置在排程时快照: 排程中的重启不因改配置取消, 下一次排程生效（规格 b.4 边界）
+			quietWindowMs,
+			cutoffMs: Date.now() + timeoutMs,
 			notifySessionId: sessionId,
 			userOk: confirmedByAgent, // agent 触发 = 已问过用户 = 已确认
 			phase: "scheduled",
@@ -583,7 +688,7 @@ export const apply = (ctx) => {
 	// ---------- 命令: /graceful-restart [原因] (用户触发, 需按钮二次确认) ----------
 	ctx.commands.register({
 		name: "graceful-restart",
-		description: "优雅重启排程: 等待所有会话/子agent空闲后, 横幅 [确认重启] 按钮二次确认, 静默观察10s无活动再自然退出(不打断回合, 重启后无interrupted不浪费token); 后跟文字为重启原因",
+		description: "优雅重启排程: 等待所有会话/子agent空闲后, 横幅 [确认重启] 按钮二次确认, 静默观察(默认10s, 配置页可调)无活动再自然退出(不打断回合, 重启后无interrupted不浪费token); 后跟文字为重启原因",
 		input: { hint: "[重启原因(可选)]" },
 		handler: async (invocation) => {
 			const agent = invocation?.agent;
@@ -591,10 +696,12 @@ export const apply = (ctx) => {
 			if (intent) return { kind: "error", text: "已有重启排程进行中: 运行 /graceful-restart-cancel 或点横幅 [取消] 后再试" };
 			const reason = String(invocation?.rawInput ?? "").trim() || "用户手动触发";
 			// ★`#A193` 件②：命令面把**宿主发放的同源 `commandId`** 交给排程（与 `dsh-balance:507` 逐字同形）⇒ 该卡落**自己那条命令行**下。
-			const r = schedule(reason, agent.session.id, false, { commandId: (typeof invocation?.commandId === "string" && invocation.commandId) ? invocation.commandId : null });
-			if (r === "ready") return { kind: "success", text: `重启已排程（原因: ${reason}）。当前环境已空闲: 点横幅 [确认重启] 后 10s 优雅重启（期间有活动自动顺延），[取消] 可随时取消，15 分钟未确认自动取消。` };
-			if (r === "ready-observing") return { kind: "success", text: `重启已排程（原因: ${reason}）。当前环境已空闲，已进入 10s 静默观察，即将优雅重启。` };
-			return { kind: "success", text: `重启已排程（原因: ${reason}）。当前有会话/子agent活跃，等待全部空闲后横幅会变为可确认。点 [确认重启] 执行，[取消] 取消，15 分钟超时自动取消。` };
+			const settings = await readSettings();
+			const quietSec = settings.quietWindowSec;
+			const r = schedule(reason, agent.session.id, false, { commandId: (typeof invocation?.commandId === "string" && invocation.commandId) ? invocation.commandId : null }, settings);
+			if (r === "ready") return { kind: "success", text: `重启已排程（原因: ${reason}）。当前环境已空闲: 点横幅 [确认重启] 后 ${quietSec}s 优雅重启（期间有活动自动顺延），[取消] 可随时取消，${settings.timeoutMin} 分钟未确认自动取消。` };
+			if (r === "ready-observing") return { kind: "success", text: `重启已排程（原因: ${reason}）。当前环境已空闲，已进入 ${quietSec}s 静默观察，即将优雅重启。` };
+			return { kind: "success", text: `重启已排程（原因: ${reason}）。当前有会话/子agent活跃，等待全部空闲后横幅会变为可确认。点 [确认重启] 执行，[取消] 取消，${settings.timeoutMin} 分钟超时自动取消。` };
 		}
 	});
 
@@ -613,7 +720,7 @@ export const apply = (ctx) => {
 	// ---------- 模型工具: graceful_restart (agent 触发, 描述要求先 ask_user_question) ----------
 	ctx.tools.register(defineTool({
 		name: "graceful_restart",
-		description: "优雅重启容器排程: 部署/改动需要重启生效时使用。调用前必须先 ask_user_question 询问用户是否确认重启, 用户确认后才调用本工具 (调用即视为用户已确认); 本工具只排程, 会等所有会话/子agent空闲后静默观察10s再自然退出, 不打断任何回合; 重启后 GUI 断开约10-30s自动恢复, 已排队的任务会由任务队列自动重新派发",
+		description: "优雅重启容器排程: 部署/改动需要重启生效时使用。调用前必须先 ask_user_question 询问用户是否确认重启, 用户确认后才调用本工具 (调用即视为用户已确认); 本工具只排程, 会等所有会话/子agent空闲后静默观察(默认10s, 配置页可调)再自然退出, 不打断任何回合; 重启后 GUI 断开约10-30s自动恢复, 已排队的任务会由任务队列自动重新派发",
 		parameters: {
 			reason: { type: "string", required: true, description: "重启原因, 如: 部署新插件 xxx 生效" }
 		},
@@ -625,16 +732,18 @@ export const apply = (ctx) => {
 			const session = exec?.agent?.session;
 			if (!session) throw new Error("无法获取当前会话");
 			const reason = String(args?.reason ?? "").trim() || "agent 触发";
+			const settings = await readSettings();
+			if (settings.allowAgentTrigger !== true) throw new Error("配置已关闭模型工具发起重启（allowAgentTrigger=false）；用户可用 /graceful-restart 命令排程");
 			if (intent) throw new Error(`已有重启排程进行中 (原因: ${intent.reason}), 请先取消再排新程`);
 			// ★`#A193` 件②（路 A）：按**本次调用的 `exec.callId`** 精确取该次 `tool/call` 的 `seq`（**不再取"最近一条"**）。
 			//   `exec.callId` ＝ 甲级明文（上游 `ToolExecutionInput.callId`）；取不到 ⇒ `null`（**不猜**）⇒ 如实无身份。
 			const _callId = String(exec?.callId ?? "");
 			const _row = { anchorSeq: (_callId && restartRowByCallId.has(_callId)) ? restartRowByCallId.get(_callId) : null };
-			const r = schedule(reason, session.id, true, _row);
-			const base = `优雅重启已排程（原因: ${reason}）。已视为用户确认，等待所有会话空闲后静默观察 10s 自然退出，不打断任何回合。`;
+			const r = schedule(reason, session.id, true, _row, settings);
+			const base = `优雅重启已排程（原因: ${reason}）。已视为用户确认，等待所有会话空闲后静默观察 ${settings.quietWindowSec}s 自然退出，不打断任何回合。`;
 			if (r === "scheduled") return { text: `${base} 当前有会话/子agent活跃，将自动等待。` };
-			if (r === "ready-observing") return { text: `${base} 当前环境已空闲，已进入 10s 静默观察。` };
-			return { text: `${base} 当前环境已空闲，已进入 10s 静默观察。` };
+			if (r === "ready-observing") return { text: `${base} 当前环境已空闲，已进入 ${settings.quietWindowSec}s 静默观察。` };
+			return { text: `${base} 当前环境已空闲，已进入 ${settings.quietWindowSec}s 静默观察。` };
 		},
 		presentCall: (args) => ({ card: "generic", title: "优雅重启容器", kind: "other", rawInput: args })
 	}));

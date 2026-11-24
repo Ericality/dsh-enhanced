@@ -1,9 +1,9 @@
 # @ericality/dsh-cost-ledger
 
-安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.4`
+安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.5`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.4`
+安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.5`
 
 
 Per-session cost ledger for DSH — 会话账本: 回合结束自动记账, 每回合注入一张可折叠的 ledger 横幅卡片 (合计/差值/计算细则), 历史按会话独立保存并经 RPC 实时拉取。
@@ -35,6 +35,18 @@ npm i @ericality/dsh-cost-ledger
 | 定价缓存 | `$DSH_HOME/cost-ledger-state.json` | `DSH_COST_LEDGER_STATE_FILE` |
 | 会话 projcache | `$DSH_HOME/storages/session_projcache.json` | `DSH_COST_LEDGER_PROJCACHE_FILE` |
 | 调试日志 | 关闭 | `DSH_DEBUG_LOG` (完整文件路径, 非空才写) |
+
+
+## 配置
+
+插件详情页有配置卡（Plugins 页 → 本插件 → 配置），保存后下一次命令或回合即按新配置执行，无需重启。
+配置落 `$DSH_HOME/plugin-data/cost-ledger/settings.json`（`schemaVersion 1`），读写端点 `/api/cost-ledger/config/get`、`/set`、`/reset`；坏值（负数、超范围、非数字、类型错）由服务端拒绝且原值不变。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `maxEntriesPerSession` | `50` | 每会话账本历史上限（5 到 500），写入新记录后裁剪最旧 |
+| `defaultCollapsed` | `true` | 回合费用卡的折叠族资格（折叠默认展收由 dsh-notice-banner 渲染） |
+| `injectTurnCard` | `true` | 关闭后不再往会话注入回合费用卡，但仍照常记账 |
 
 ## 依赖
 

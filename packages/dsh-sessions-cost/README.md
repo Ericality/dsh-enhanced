@@ -1,9 +1,9 @@
 # @ericality/dsh-sessions-cost
 
-安装：`dsh plugin --profile web add @ericality/dsh-sessions-cost@0.2.1`
+安装：`dsh plugin --profile web add @ericality/dsh-sessions-cost@0.2.2`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-sessions-cost@0.2.1`
+安装：`dsh plugin --profile web add @ericality/dsh-sessions-cost@0.2.2`
 
 
 Multi-session cost report for DSH — 多会话费用统计: `/sessions-cost [小时数]` 在时间窗口内按会话日志逐事件统计 token 与费用 (分高峰/低谷计价), 结果以可折叠横幅展示, 支持子 agent 树分组。
@@ -33,6 +33,18 @@ npm i @ericality/dsh-sessions-cost
 | 会话清单/标题/最后活动 (projcache) | `$DSH_HOME/storages/session_projcache.json` | `DSH_SESSIONS_COST_PROJCACHE_FILE` |
 | 会话日志根目录 | `$DSH_HOME/sessions` | `DSH_SESSIONS_COST_SESSIONS_ROOT` |
 | 定价缓存 | `$DSH_HOME/sessions-cost-state.json` | `DSH_SESSIONS_COST_STATE_FILE` |
+
+
+## 配置
+
+插件详情页有配置卡（Plugins 页 → 本插件 → 配置），保存后下一次命令或回合即按新配置执行，无需重启。
+配置落 `$DSH_HOME/plugin-data/sessions-cost/settings.json`（`schemaVersion 1`），读写端点 `/api/sessions-cost/config/get`、`/set`、`/reset`；坏值（负数、超范围、非数字、类型错）由服务端拒绝且原值不变。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `defaultHours` | `24` | /sessions-cost 不带参数时的统计窗口（1 到 720 小时） |
+| `defaultCollapsed` | `true` | 多会话费用横幅的默认折叠（由 dsh-notice-banner 渲染） |
+| `showBreakdown` | `true` | 关闭后横幅只保留合计与窗口统计，逐会话明细不显示 |
 
 ## 依赖
 

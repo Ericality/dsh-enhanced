@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Add to Home Screen",
-    "description": "Provides home-screen icons, standalone mode and a PWA manifest for mobile browsers.",
+    "description": "Three icon sets (sky/lav/mint), a manifest generated from the live config, and a configuration card on the plugin page.",
     "detail": "README.md"
   }
 }

@@ -1,9 +1,9 @@
 # @ericality/dsh-balance
 
-安装：`dsh plugin --profile web add @ericality/dsh-balance@0.1.1`
+安装：`dsh plugin --profile web add @ericality/dsh-balance@0.1.2`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-balance@0.1.1`
+安装：`dsh plugin --profile web add @ericality/dsh-balance@0.1.2`
 
 
 Balance and cost dashboards for DSH — 斜杠命令 /balance /balance-detail /cost: 实时 DeepSeek 余额、间隔差值预估、累计用量与当前会话费用, 以结构化横幅展示 (零 token)。
@@ -36,6 +36,18 @@ API 密钥解析顺序: `DEEPSEEK_API_KEY` 环境变量 → 凭证 YAML 文件�
 | 快照/定价缓存 | `$DSH_HOME/balance-state.json` | `DSH_BALANCE_STATE_FILE` |
 
 > 建议优先用 `DEEPSEEK_API_KEY` 环境变量注入密钥; 凭证文件路径亦可用 `DSH_BALANCE_CREDENTIALS_FILE` 指向自定义位置。
+
+
+## 配置
+
+插件详情页有配置卡（Plugins 页 → 本插件 → 配置），保存后下一次命令或回合即按新配置执行，无需重启。
+配置落 `$DSH_HOME/plugin-data/balance/settings.json`（`schemaVersion 1`），读写端点 `/api/balance/config/get`、`/set`、`/reset`；坏值（负数、超范围、非数字、类型错）由服务端拒绝且原值不变。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `alertThresholdYuan` | `0` | 余额低于该值时 /balance 与 /balance-detail 多输出一行提醒；0 表示不提醒 |
+| `pricingCacheMinutes` | `30` | 价格缓存有效期（分钟），配得更短时强制刷新官方价目 |
+| `includeSubagents` | `true` | 关闭后 /cost 只统计当前会话，不含委托子会话 |
 
 ## 依赖
 

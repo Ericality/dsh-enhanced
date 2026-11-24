@@ -1,9 +1,111 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 
 /** 数据根：DSH_HOME（缺省 ~/.dsh）；会话日志与投影缓存都从它派生。 */
 const DSH_HOME = process.env.DSH_HOME || joinPath(homedir(), ".dsh");
+/** 本插件自有数据：<root>/plugin-data/sessions-cost/（配置 settings.json 落这里）。 */
+const PLUGIN_DATA = joinPath(DSH_HOME, "plugin-data", "sessions-cost");
+
+// ---------- 插件配置（/api/sessions-cost/config，落 plugin-data/sessions-cost/settings.json，schemaVersion 1） ----------
+const SETTINGS_FILE = process.env.DSH_SESSIONS_COST_SETTINGS_FILE || joinPath(PLUGIN_DATA, "settings.json");
+const SETTINGS_SCHEMA = 1;
+// 默认值 = 改造前常量（默认窗口 24 小时；横幅默认折叠、明细全显示）
+const SETTINGS_DEFAULTS = Object.freeze({ defaultHours: 24, defaultCollapsed: true, showBreakdown: true });
+const SETTINGS_NUMBERS = Object.freeze({ defaultHours: [1, 720] });
+const SETTINGS_BOOLS = Object.freeze(["defaultCollapsed", "showBreakdown"]);
+const settingsState = { mtimeMs: -1, value: { ...SETTINGS_DEFAULTS } };
+
+/** 归一化：缺省/坏值一律回默认值。 */
+function cleanSettings(input) {
+	const src = input && typeof input === "object" ? input : {};
+	const out = { ...SETTINGS_DEFAULTS };
+	for (const [key, [min, max]] of Object.entries(SETTINGS_NUMBERS)) {
+		const v = src[key];
+		if (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max) out[key] = v;
+	}
+	for (const key of SETTINGS_BOOLS) if (typeof src[key] === "boolean") out[key] = src[key];
+	return out;
+}
+
+/** 现读配置（按 mtime 失效；文件缺失回默认值，永不 throw）。 */
+async function readSettings() {
+	try {
+		const st = await stat(SETTINGS_FILE);
+		if (st.mtimeMs === settingsState.mtimeMs) return settingsState.value;
+		const raw = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+		const clean = cleanSettings(raw && typeof raw === "object" && raw.settings ? raw.settings : raw);
+		settingsState.mtimeMs = st.mtimeMs;
+		settingsState.value = clean;
+		return clean;
+	} catch {
+		return { ...SETTINGS_DEFAULTS };
+	}
+}
+
+/** 落盘（合并后写全量，schemaVersion 1）。 */
+async function writeSettings(patch) {
+	const next = cleanSettings({ ...(await readSettings()), ...(patch || {}) });
+	try {
+		mkdirSync(PLUGIN_DATA, { recursive: true });
+		await writeFile(SETTINGS_FILE, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA, settings: next }, null, 2), "utf8");
+		settingsState.mtimeMs = -1;
+		settingsState.value = next;
+		return { ok: true, settings: next };
+	} catch (err) {
+		return { ok: false, message: String(err?.message ?? err) };
+	}
+}
+
+/** set 的前置校验：类型与范围不符 ⇒ ok:false（原值不变）。 */
+function validateSettings(payload) {
+	const src = payload && typeof payload === "object" && payload.settings && typeof payload.settings === "object" ? payload.settings : payload;
+	if (!src || typeof src !== "object") return { ok: false, message: "缺少配置对象" };
+	const patch = {};
+	for (const [key, value] of Object.entries(src)) {
+		if (Object.hasOwn(SETTINGS_NUMBERS, key)) {
+			const [min, max] = SETTINGS_NUMBERS[key];
+			if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return { ok: false, message: `${key} 必须是 ${min} 到 ${max} 之间的数字` };
+			patch[key] = value;
+		} else if (SETTINGS_BOOLS.includes(key)) {
+			if (typeof value !== "boolean") return { ok: false, message: `${key} 必须是布尔值` };
+			patch[key] = value;
+		} else {
+			return { ok: false, message: `未知字段 ${key}` };
+		}
+	}
+	if (!Object.keys(patch).length) return { ok: false, message: "没有可保存的字段" };
+	return { ok: true, patch };
+}
+
+/** 注册 /api/sessions-cost/config 的 get / set / reset（经 host-compat 通道面；失败如实 warn）。 */
+function registerConfigApi(ctx) {
+	const handler = async (endpoint, payload) => {
+		try {
+			if (endpoint === "get") return { ok: true, value: { settings: await readSettings(), defaults: { ...SETTINGS_DEFAULTS } } };
+			if (endpoint === "reset") {
+				const r = await writeSettings({ ...SETTINGS_DEFAULTS });
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			if (endpoint === "set") {
+				const v = validateSettings(payload);
+				if (!v.ok) return { ok: false, error: { code: "bad-request", message: v.message } };
+				const r = await writeSettings(v.patch);
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			return { ok: false, error: { code: "bad-request", message: `未知端点 ${endpoint}` } };
+		} catch (err) {
+			ctx.logger?.warn?.(`dsh-sessions-cost: /api/sessions-cost/config ${endpoint} 失败: ${String(err?.message ?? err)}`);
+			return { ok: false, error: { code: "internal", message: String(err?.message ?? err) } };
+		}
+	};
+	import("@ericality/dsh-host-compat/seams").then((seams) => {
+		if (typeof seams?.channelFace !== "function") { ctx.logger?.warn?.("dsh-sessions-cost: host-compat 未提供 channelFace，/api/sessions-cost/config 不可用"); return; }
+		const face = seams.channelFace(ctx, "/sessions-cost/config", ["get", "set", "reset"], handler);
+		if (!face?.ok) ctx.logger?.warn?.(`dsh-sessions-cost: /api/sessions-cost/config 注册失败 ${JSON.stringify(face?.results ?? [])}`);
+	}).catch((err) => { ctx.logger?.warn?.(`dsh-sessions-cost: host-compat 加载失败 ${String(err?.message ?? err)}`); });
+}
 import { createHash } from "node:crypto";
 /** ★批7 `T15`（`#A342`）：`costs` 卡语义 = **每次命令一张新卡**（`:546-548` 注释：两次 `/cost` 曾互相覆盖）
  *  ⇒ `key` 缺省（逐次唯一）时 `cardId` **必须逐次不同**（否则被 store 判同卡 ⇒ 幂等覆盖、卡不再新增）。
@@ -62,7 +164,7 @@ import { zstdDecompressSync } from "node:zlib";
  * 不在 session/event 观察者派发内, 无需 setTimeout — 见 dsh-balance 手册坑 6)。
  */
 export const name = "dsh-sessions-cost";
-export const inject = ["commands"];
+export const inject = ["commands", "connection"];
 
 // ================= 共享库动态加载 (契约 §10.1: 禁静态 import 共享包) =================
 /** 本插件告警出口 (apply 内接 ctx.logger.warn; 未接时退回 console.warn) */
@@ -667,6 +769,7 @@ function fallbackSessionLines(r, prices) {
 }
 
 export async function apply(ctx) {
+	registerConfigApi(ctx);
 	// 插件告警出口 (RD-43 缺库降级必须可观测, §2.3 禁止静默)
 	logWarn = (m) => { try { ctx.logger?.warn?.(m); } catch { /* noop */ } };
 	// RD-43: 启动期探测共享取价库 —— 缺库立即 warn (不等首次命令才暴露)
@@ -701,13 +804,16 @@ async function latestTurnOf(sid) {
 
 	ctx.commands.register({
 		name: "sessions-cost",
-		description: "多会话费用统计: 本地计算近 N 小时 (默认 24) 内各会话费用, 按会话日志逐事件统计 token + 分高峰/低谷计价, 每会话展示计算过程, 玫红横幅默认折叠 (零 token)",
+		description: "多会话费用统计: 本地计算近 N 小时 (默认取配置页 defaultHours，出厂 24) 内各会话费用, 按会话日志逐事件统计 token + 分高峰/低谷计价, 每会话展示计算过程, 玫红横幅默认折叠 (零 token)",
 		input: {
-			hint: "[小时数，默认 24]"
+			hint: "[小时数，缺省取配置页 defaultHours]"
 		},
 		handler: async (invocation) => {
 			const session = invocation?.agent?.session;
-			const hours = parseHours(invocation?.rawInput);
+			const settings = await readSettings();
+			// 配置 defaultHours: 命令不带参数时用它（显式带小时数以参数优先；显式但非法仍报参数无效）
+			const rawHours = String(invocation?.rawInput ?? "").trim();
+			const hours = rawHours === "" ? settings.defaultHours : parseHours(rawHours);
 			// ★段2 `B2`（2026-09-29）：`error` 卡**按类型**定身份（三类型**命名空间各自一段、不共用**）——
 			//   `参数无效` ⇒ 取**命令**（`commandId`：同命令重复 ⇒ 恒 1 张；异命令 ⇒ 各 1 张）；
 			//   `projcache 未就绪` ⇒ 取**会话**（`sid`：重复 ⇒ 恒 1 张）；
@@ -737,7 +843,7 @@ async function latestTurnOf(sid) {
 			};
 
 			if (hours === null) {
-				return await errBanner("参数无效", ["请输入小时数（如 /sessions-cost 48），默认 24 小时"], "invalid-arg");
+				return await errBanner("参数无效", [`请输入小时数（如 /sessions-cost 48），默认 ${settings.defaultHours} 小时`], "invalid-arg");
 			}
 			const hoursLabel = `${hours} 小时`;
 			const res = await computeWindowCosts(hours);
@@ -753,7 +859,8 @@ async function latestTurnOf(sid) {
 			// 动态 import dsh-cost-tree, 库缺失/无窗口内父子结构 → rows 原样 (平铺兼容旧服务端)
 			const rows2 = await addTreeGrouping(rows);
 			// 会话明细 (全量不省略): 客户端手风琴渲染, 每会话每种类型一行; 有 treeGroup → 客户端树分组渲染
-			const sessions = buildSessionCards(rows2, prices);
+			// 配置 showBreakdown=false ⇒ 只保留合计与窗口统计, 逐会话明细不展示
+			const sessions = settings.showBreakdown ? buildSessionCards(rows2, prices) : [];
 
 			const stats = [
 				{ label: "窗口合计", value: `¥${fmtMoney(total)}`, strong: true, note: `${matched} 会话` },
@@ -765,7 +872,8 @@ async function latestTurnOf(sid) {
 
 			// 回退文本 (横幅注入失败时)
 			const lines = [`近 ${hoursLabel}会话费用 (${matched} 个会话, 合计 ¥${fmtMoney(total)})`];
-			for (const r of rows) lines.push(...fallbackSessionLines(r, prices));
+			if (settings.showBreakdown) for (const r of rows) lines.push(...fallbackSessionLines(r, prices));
+			else lines.push("(已按配置关闭逐会话明细)");
 			lines.push(`定价来源: ${priceSource}`);
 
 			const ok = await appendBanner(session, {

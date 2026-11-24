@@ -1,17 +1,28 @@
 {
   "name": "@ericality/dsh-pwa",
-  "version": "0.1.1",
-  "description": "移动端主屏安装：apple-touch-icon、独立窗口与 PWA 清单。",
+  "version": "0.1.2",
+  "description": "移动端主屏安装：三套图标、实时生成的 PWA 清单与插件页配置卡。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "manifestVersion": 1,
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
@@ -22,7 +33,17 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": "^0.2.2-rc.1",
-    "@deepseek-ai/cordis": "~4.1.0"
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@ericality/dsh-host-compat": "0.1.1"
   },
   "files": [
     "lib",
@@ -32,6 +53,7 @@
     "README.md",
     "LICENSE"
   ],
+  "icon": "./assets/dsh-icon-512.png",
   "license": "BSD-3-Clause",
   "publishConfig": {
     "access": "public"

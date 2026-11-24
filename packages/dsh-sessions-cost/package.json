@@ -1,11 +1,14 @@
 {
   "name": "@ericality/dsh-sessions-cost",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "按时间窗口统计各会话费用，按高峰与低谷分别计价，结果以可折叠横幅展示。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json"
@@ -14,6 +17,14 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
     }
   },
   "engines": {
@@ -35,8 +46,10 @@
     "cordis.patch.yml",
     "locale",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg"
   ],
+  "icon": "./icon.svg",
   "license": "BSD-3-Clause",
   "publishConfig": {
     "access": "public"

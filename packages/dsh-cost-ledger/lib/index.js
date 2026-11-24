@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 /** ★批7 `T15`（`#A342`）：横幅卡的**真实身份** ⇒ 32 hex `cardId`（形状由 `dsh-banner-kit` 校验：非法 ⇒ 整条被拒 ⇒ 故必须 32 hex）。
  *  口径 = **该卡既有身份输入**（同 `ctxKey` 同源）；本卡语义 = **每回合一张**（`turn`）⇒ 稳定身份，缺身份输入 ⇒ 显式 `null`（走旧路径，不伪造）。 */
@@ -11,6 +11,105 @@ import { join as joinPath } from "node:path";
 /** 数据根：DSH_HOME（缺省 ~/.dsh）；本插件自有数据落 <root>/plugin-data/cost-ledger/。 */
 const DSH_HOME = process.env.DSH_HOME || joinPath(homedir(), ".dsh");
 const PLUGIN_DATA = joinPath(DSH_HOME, "plugin-data", "cost-ledger");
+
+// ---------- 插件配置（/api/cost-ledger/config，落 plugin-data/cost-ledger/settings.json，schemaVersion 1） ----------
+const SETTINGS_FILE = process.env.DSH_COST_LEDGER_SETTINGS_FILE || joinPath(PLUGIN_DATA, "settings.json");
+const SETTINGS_SCHEMA = 1;
+// 默认值 = 改造前常量（LEDGER_MAX_ENTRIES = 50），默认折叠/注入与旧行为一致
+const SETTINGS_DEFAULTS = Object.freeze({ maxEntriesPerSession: 50, defaultCollapsed: true, injectTurnCard: true });
+const SETTINGS_NUMBERS = Object.freeze({ maxEntriesPerSession: [5, 500] });
+const SETTINGS_BOOLS = Object.freeze(["defaultCollapsed", "injectTurnCard"]);
+const settingsState = { mtimeMs: -1, value: { ...SETTINGS_DEFAULTS } };
+
+/** 归一化：缺省/坏值一律回默认值。 */
+function cleanSettings(input) {
+	const src = input && typeof input === "object" ? input : {};
+	const out = { ...SETTINGS_DEFAULTS };
+	for (const [key, [min, max]] of Object.entries(SETTINGS_NUMBERS)) {
+		const v = src[key];
+		if (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max) out[key] = v;
+	}
+	for (const key of SETTINGS_BOOLS) if (typeof src[key] === "boolean") out[key] = src[key];
+	return out;
+}
+
+/** 现读配置（按 mtime 失效；文件缺失回默认值，永不 throw）。 */
+async function readSettings() {
+	try {
+		const st = await stat(SETTINGS_FILE);
+		if (st.mtimeMs === settingsState.mtimeMs) return settingsState.value;
+		const raw = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+		const clean = cleanSettings(raw && typeof raw === "object" && raw.settings ? raw.settings : raw);
+		settingsState.mtimeMs = st.mtimeMs;
+		settingsState.value = clean;
+		return clean;
+	} catch {
+		return { ...SETTINGS_DEFAULTS };
+	}
+}
+
+/** 落盘（合并后写全量，schemaVersion 1）。 */
+async function writeSettings(patch) {
+	const next = cleanSettings({ ...(await readSettings()), ...(patch || {}) });
+	try {
+		mkdirSync(PLUGIN_DATA, { recursive: true });
+		await writeFile(SETTINGS_FILE, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA, settings: next }, null, 2), "utf8");
+		settingsState.mtimeMs = -1;
+		settingsState.value = next;
+		return { ok: true, settings: next };
+	} catch (err) {
+		return { ok: false, message: String(err?.message ?? err) };
+	}
+}
+
+/** set 的前置校验：类型与范围不符 ⇒ ok:false（原值不变）。 */
+function validateSettings(payload) {
+	const src = payload && typeof payload === "object" && payload.settings && typeof payload.settings === "object" ? payload.settings : payload;
+	if (!src || typeof src !== "object") return { ok: false, message: "缺少配置对象" };
+	const patch = {};
+	for (const [key, value] of Object.entries(src)) {
+		if (Object.hasOwn(SETTINGS_NUMBERS, key)) {
+			const [min, max] = SETTINGS_NUMBERS[key];
+			if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return { ok: false, message: `${key} 必须是 ${min} 到 ${max} 之间的数字` };
+			patch[key] = value;
+		} else if (SETTINGS_BOOLS.includes(key)) {
+			if (typeof value !== "boolean") return { ok: false, message: `${key} 必须是布尔值` };
+			patch[key] = value;
+		} else {
+			return { ok: false, message: `未知字段 ${key}` };
+		}
+	}
+	if (!Object.keys(patch).length) return { ok: false, message: "没有可保存的字段" };
+	return { ok: true, patch };
+}
+
+/** 注册 /api/cost-ledger/config 的 get / set / reset（经 host-compat 通道面；失败如实 warn）。 */
+function registerConfigApi(ctx) {
+	const handler = async (endpoint, payload) => {
+		try {
+			if (endpoint === "get") return { ok: true, value: { settings: await readSettings(), defaults: { ...SETTINGS_DEFAULTS } } };
+			if (endpoint === "reset") {
+				const r = await writeSettings({ ...SETTINGS_DEFAULTS });
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			if (endpoint === "set") {
+				const v = validateSettings(payload);
+				if (!v.ok) return { ok: false, error: { code: "bad-request", message: v.message } };
+				const r = await writeSettings(v.patch);
+				return r.ok ? { ok: true, value: { settings: r.settings, defaults: { ...SETTINGS_DEFAULTS } } } : { ok: false, error: { code: "internal", message: r.message } };
+			}
+			return { ok: false, error: { code: "bad-request", message: `未知端点 ${endpoint}` } };
+		} catch (err) {
+			ctx.logger?.warn?.(`dsh-cost-ledger: /api/cost-ledger/config ${endpoint} 失败: ${String(err?.message ?? err)}`);
+			return { ok: false, error: { code: "internal", message: String(err?.message ?? err) } };
+		}
+	};
+	import("@ericality/dsh-host-compat/seams").then((seams) => {
+		if (typeof seams?.channelFace !== "function") { ctx.logger?.warn?.("dsh-cost-ledger: host-compat 未提供 channelFace，/api/cost-ledger/config 不可用"); return; }
+		const face = seams.channelFace(ctx, "/cost-ledger/config", ["get", "set", "reset"], handler);
+		if (!face?.ok) ctx.logger?.warn?.(`dsh-cost-ledger: /api/cost-ledger/config 注册失败 ${JSON.stringify(face?.results ?? [])}`);
+	}).catch((err) => { ctx.logger?.warn?.(`dsh-cost-ledger: host-compat 加载失败 ${String(err?.message ?? err)}`); });
+}
 const COMPAT_DIR = process.env.DSH_COMPAT_DIR || joinPath(DSH_HOME, "plugin-data", "host-compat");
 const LOG_DIR = joinPath(DSH_HOME, "logs", "cost-ledger");
 // v0.3.3 (2026-09-14): 模型工具 session_cost —— agent 自查实时费用
@@ -547,6 +646,7 @@ function serializeLedger(fn) {
 }
 
 export async function apply(ctx) {
+	registerConfigApi(ctx);
 	// ================= host-compat 适配闸门 (阶段 1; 契约 §2/§3/§4/§10) =================
 	// 加载强制: 动态 import + try/catch (§2.3)。§10.1 禁静态 import host-compat/共享包 —
 	// 缺包 ⇒ 模块加载失败 ⇒ 容器崩溃循环。§10.2 禁 legacy 直连兜底双路径 ⇒ 缺能力即停用 + 上报。
@@ -713,6 +813,7 @@ export async function apply(ctx) {
 		// §9.3 Q3 (2026-09-06): 子会话 (origin=subagent) 只跳过卡片/横幅 UI 注入,
 		// 记账照常 (serializeLedger/对账/t 去重 一律不动) — "滤注入 ≠ 抑制写入"。
 		const isSubagent = session?.header?.origin === "subagent";
+		const settings = await readSettings();
 		const usage = await readSessionUsage(sid);
 		if (!usage) {
 			debug(`ledger ${sid.slice(0, 12)}: projcache 无数据, 跳过`);
@@ -762,7 +863,7 @@ export async function apply(ctx) {
 				};
 				entries.push(entry);
 				entries.sort((a, b) => a.t - b.t);
-				if (entries.length > LEDGER_MAX_ENTRIES) entries.splice(0, entries.length - LEDGER_MAX_ENTRIES);
+				if (entries.length > settings.maxEntriesPerSession) entries.splice(0, entries.length - settings.maxEntriesPerSession);
 				return { entry, prev, entries };
 			});
 		} catch (err) {
@@ -775,6 +876,10 @@ export async function apply(ctx) {
 		// (out 来自 serializeLedger, 账本写入已完成; 注入抑制 ≠ 写入抑制)。
 		if (isSubagent) {
 			debug(`ledger ${sid.slice(0, 12)}: 子会话 (origin=subagent), 跳过卡片注入, 记账已照常`);
+			return { entry: out.entry };
+		}
+		if (!settings.injectTurnCard) {
+			debug(`ledger ${sid.slice(0, 12)}: 配置 injectTurnCard=false, 跳过卡片注入, 记账已照常`);
 			return { entry: out.entry };
 		}
 
@@ -852,7 +957,7 @@ export async function apply(ctx) {
 			ctxKey: _ledgerCtxKey,
 			cardId: _ledgerCardId,
 			kind: "ledger",
-			priority: 3, foldable: true, family: "ledger",
+			priority: 3, foldable: settings.defaultCollapsed === true, family: "ledger",
 			rev: Number.isInteger(t) ? t : Date.now(),
 			title: `回合 #${t} · 会话费用`,
 			subtitle: `会话 ${sid.slice(8, 16)} · ${tierName}价${hit !== null ? ` · 命中 ${hit}%` : ""}`,

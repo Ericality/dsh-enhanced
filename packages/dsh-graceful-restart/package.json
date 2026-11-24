@@ -1,11 +1,14 @@
 {
   "name": "@ericality/dsh-graceful-restart",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "优雅重启：等所有会话与子 agent 空闲后二次确认再退出，不打断进行中的回合。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json"
@@ -14,6 +17,14 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
     }
   },
   "engines": {
@@ -34,8 +45,10 @@
     "cordis.patch.yml",
     "locale",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg"
   ],
+  "icon": "./icon.svg",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
