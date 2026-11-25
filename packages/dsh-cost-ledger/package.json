@@ -1,7 +1,7 @@
 {
   "name": "@ericality/dsh-cost-ledger",
-  "version": "0.3.5",
-  "description": "会话账本：回合结束自动记账，每回合一张可折叠明细卡，历史按会话独立保存。",
+  "version": "0.3.6",
+  "description": "会话账本：回合结束自动记账，每回合一张可折叠明细卡，历史按会话独立保存。；v0.3.6（2026-11-25 W6a）合入团队口径修复：主数字标注「本会话口径」、团队附录（团队成员数/团队累计/团队本回合增量，账本口径）、成员超阈值聚合提醒（30min 节流）；动态 import 一律 @ericality scope（dsh-cost-tree / dsh-reconcile），修迁移后旧 scope 缺失导致的团队口径降级。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

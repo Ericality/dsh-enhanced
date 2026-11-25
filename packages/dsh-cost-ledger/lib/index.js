@@ -529,7 +529,7 @@ function sessionTitle(session) {
 const fmtMoney = (n) => (Math.round(n * 100) / 100).toLocaleString("zh-CN");
 
 // ---- dsh-cost-tree 动态加载 (复用策略 B: optionalDependency, 缺失/失败 → null 降级) ----
-// ⚠️ 禁止顶层静态 import("@deepseek-ai/dsh-cost-tree") — 会重建"缺包崩溃"硬链 (设计 §0.2/§8.3)。
+// ⚠️ 禁止顶层静态 import("@ericality/dsh-cost-tree") — 会重建"缺包崩溃"硬链 (设计 §0.2/§8.3)。
 let costTreePromise = null;
 export function loadCostTree() {
 	costTreePromise ??= import("@ericality/dsh-cost-tree/lib/index.js")
@@ -559,6 +559,79 @@ export function treeLedgerLatestTotal(ledger, childIds) {
 		total += last.total;
 	}
 	return { count: settledIds.length, total, settledIds };
+}
+
+// ================= v0.3.4 团队口径小改（批三 2026-11-24；规格 d.2） =================
+// ① 主数字标注「本会话口径」；② 团队附录＝成员数/团队累计/团队本回合增量（账本口径，参考既有子
+//   agent 树合计做法，不做面板与成员明细）；③ 成员超阈值聚合提醒（按成员账本条目+节流，不依赖
+//   guard 数据）。阈值仅数值对齐 guard 保守单回合默认 consTurnYuan=0.40。导出纯函数供离线判据/正控。
+export const TEAM_ALERT_TURN_YUAN = 0.4;
+export const TEAM_ALERT_THROTTLE_MS = 30 * 60 * 1000;
+export const TEAM_ALERT_MAX_SHOW = 3;
+
+/** 主数字 3 格（口径显式标注「本会话口径」；团队口径见附录行） */
+export function ledgerMainStats(entry, prev, t) {
+	const delta = entry.delta;
+	const pct = delta !== null && prev && prev.total > 0 ? Math.round((delta / prev.total) * 100) : null;
+	return [
+		{ label: "合计预估（本会话）", value: `¥${fmtMoney(entry.total)}`, strong: true, note: "本会话口径" },
+		{ label: "本回合（本会话）", value: delta !== null ? `+¥${fmtMoney(delta)}` : "—", note: delta !== null ? `本会话口径 · 较上次${pct !== null ? ` +${pct}%` : ""}` : "本会话口径 · 首次记账" },
+		{ label: "计算次数", value: String(t), note: "每回合自动" }
+	];
+}
+
+/** 团队附录行：团队成员 N 个 · 团队累计（自身+成员，账本口径）+ 团队本回合增量 */
+export function teamAppendixStat(teamChildCount, teamCum, teamDelta) {
+	const n = Number(teamChildCount) || 0;
+	if (n <= 0) return null;
+	const cum = Number.isFinite(teamCum) ? teamCum : 0;
+	const deltaNote = Number.isFinite(teamDelta) ? `团队本回合 +¥${fmtMoney(teamDelta)}` : "团队本回合 —（首次统计）";
+	return { label: "团队成员", value: `${n} 个 · 团队累计 +¥${fmtMoney(cum)}`, note: `${deltaNote} · 账本口径` };
+}
+
+/** 成员超阈值（按成员账本最新一条：优先回合增量 delta，首条无 delta 用累计 total 判定） */
+export function overThresholdMembers(ledger, childIds, threshold = TEAM_ALERT_TURN_YUAN) {
+	const out = [];
+	for (const cid of Array.isArray(childIds) ? childIds : []) {
+		const entries = ledger?.sessions?.[cid]?.entries;
+		if (!Array.isArray(entries) || entries.length === 0) continue;
+		const last = entries[entries.length - 1];
+		const v = typeof last?.delta === "number" && Number.isFinite(last.delta) ? last.delta : (typeof last?.total === "number" ? last.total : null);
+		if (v === null || !(v > threshold)) continue;
+		out.push({ sid: cid, turn: Number.isInteger(last.t) ? last.t : null, yuan: Math.round(v * 100) / 100, basis: typeof last?.delta === "number" ? "delta" : "total" });
+	}
+	return out.sort((a, b) => b.yuan - a.yuan);
+}
+
+/** 聚合提醒签名＝成员 id 集合（金额变化不触发"新成员"，仅成员集合变化才提前提示） */
+export function teamAlertSignature(alerts) {
+	return (Array.isArray(alerts) ? alerts : []).map((a) => String(a.sid)).sort().join("|");
+}
+
+/** 节流判定：无历史/超窗口/窗口内出现新成员 ⇒ 发；否则抑制（默认 30min） */
+export function shouldAnnounceTeamAlert(alerts, prevState, now = Date.now(), throttleMs = TEAM_ALERT_THROTTLE_MS) {
+	if (!Array.isArray(alerts) || alerts.length === 0) return false;
+	if (!prevState || !Number.isFinite(prevState.at)) return true;
+	if (now - prevState.at >= throttleMs) return true;
+	return teamAlertSignature(alerts) !== String(prevState.sig ?? "");
+}
+
+/** 聚合提醒行（最多列 3 名，其余折叠为"等 N 名"） */
+export function teamAlertStat(alerts) {
+	if (!Array.isArray(alerts) || alerts.length === 0) return null;
+	const shown = alerts.slice(0, TEAM_ALERT_MAX_SHOW).map((a) => `${String(a.sid).slice(0, 12)}=¥${fmtMoney(a.yuan)}${a.turn !== null ? `@#${a.turn}` : ""}`);
+	const more = alerts.length > TEAM_ALERT_MAX_SHOW ? ` 等 ${alerts.length} 名` : "";
+	return { label: "团队成员提醒", value: `${alerts.length} 名超阈值（${shown.join(" · ")}${more}）`, note: `阈值 ¥${fmtMoney(TEAM_ALERT_TURN_YUAN)}/回合 · 账本口径` };
+}
+
+/** 渲染层组装（离线判据与在线发射共用）：主数字 + 团队附录/降级如实行 + 聚合提醒 */
+export function buildLedgerStats({ entry, prev, t, teamChildCount = 0, teamCum = null, teamDelta = null, teamAlerts = null, teamDegraded = false }) {
+	const stats = ledgerMainStats(entry, prev, t);
+	if (teamDegraded) stats.push({ label: "团队口径", value: "不可用（cost-tree 缺失）", note: "降级：仅本会话口径，非静默" });
+	else { const teamStat = teamAppendixStat(teamChildCount, teamCum, teamDelta); if (teamStat) stats.push(teamStat); }
+	const alertStat = teamAlertStat(teamAlerts);
+	if (alertStat) stats.push(alertStat);
+	return stats;
 }
 
 /**
@@ -828,6 +901,19 @@ export async function apply(ctx) {
 		const t = opts.turn ?? latestTurn(session);
 		if (!Number.isInteger(t)) return { skipped: true };
 
+		// §d.2 团队口径：成员子树 id 预计算（只对将要出卡的会话；subagent 记账仍走原路径）。
+		//   cost-tree 缺失/异常 ⇒ treeDegraded=true，卡片如实标「团队口径不可用」（不静默降级）。
+		let teamChildIds = [];
+		let teamTreeDegraded = false;
+		if (!isSubagent) {
+			const treeMod = await loadCostTree();
+			if (!treeMod) teamTreeDegraded = true;
+			else {
+				try { teamChildIds = (await treeMod.subtreeIds(sid)).filter((id) => id !== sid); }
+				catch (err) { teamTreeDegraded = true; debug(`ledger ${sid.slice(0, 12)}: 团队子树计算失败, 团队口径如实降级: ${String(err?.message ?? err)}`); }
+			}
+		}
+
 		// 读-改-写原子串行: 防并发覆盖; t 去重幂等 (实时/对账重复调用同一回合只记一次);
 		// 按回合号排序 (补记的旧回合插到前面, 历史列表/游标才正确)
 		let out;
@@ -861,10 +947,24 @@ export async function apply(ctx) {
 					rcs: cr.rcs,
 					priceSource: source
 				};
+				// §d.2 团队口径采样（账本口径＝自身已结算 + 各成员最新已结算；不依赖 cost-guard 数据）
+				let team = { childCount: 0, cum: total, delta: null, alerts: [] };
+				if (!isSubagent) {
+					const childInfo = treeLedgerLatestTotal(ledger, teamChildIds);
+					const cum = total + childInfo.total;
+					const teamDelta = prev && Number.isFinite(prev.teamCum) ? cum - prev.teamCum : null;
+					const alerts = overThresholdMembers(ledger, teamChildIds); // 按成员账本条目判定
+					const announce = shouldAnnounceTeamAlert(alerts, rec.teamAlertState ?? null); // 节流
+					if (announce) rec.teamAlertState = { at: Date.now(), sig: teamAlertSignature(alerts), count: alerts.length };
+					entry.teamChildCount = childInfo.count;
+					entry.teamCum = Math.round(cum * 100) / 100;
+					entry.teamDelta = teamDelta === null ? null : Math.round(teamDelta * 100) / 100;
+					team = { childCount: childInfo.count, cum: entry.teamCum, delta: entry.teamDelta, alerts: announce ? alerts : [] };
+				}
 				entries.push(entry);
 				entries.sort((a, b) => a.t - b.t);
 				if (entries.length > settings.maxEntriesPerSession) entries.splice(0, entries.length - settings.maxEntriesPerSession);
-				return { entry, prev, entries };
+				return { entry, prev, entries, team, treeDegraded: teamTreeDegraded };
 			});
 		} catch (err) {
 			ctx.logger.warn(`dsh-cost-ledger: 账本写入失败: ${String(err?.message ?? err)}`);
@@ -883,29 +983,6 @@ export async function apply(ctx) {
 			return { entry: out.entry };
 		}
 
-		// ---- §3.3 (2026-09-06): 卡片"含子 agent"读时附注 ----
-		// 有后代时加统计行: { label: "含子 agent", value: "N 个 · 树合计 +¥y",
-		//   note: "账本口径 · 截至当前已结算" }。
-		// y = Σ 各后代账本子桶**最新一条 entry.total** (账本口径已含 reasoning/分时价 → 不再乘价);
-		// tree ids 经 loadCostTree().subtreeIds(sid) (只含 origin=subagent 委托边, 排除 fork 续接)。
-		let treeStat = null;
-		const treeMod = await loadCostTree();
-		if (treeMod) {
-			try {
-				const ids = await treeMod.subtreeIds(sid);
-				const childIds = ids.filter((id) => id !== sid);
-				if (childIds.length) {
-					const ledgerNow = await readLedger();
-					const { count, total } = treeLedgerLatestTotal(ledgerNow, childIds);
-					if (count > 0) {
-						treeStat = { label: "含子 agent", value: `${count} 个 · 树合计 +¥${fmtMoney(total)}`, note: "账本口径 · 截至当前已结算" };
-					}
-				}
-			} catch (err) {
-				debug(`ledger ${sid.slice(0, 12)}: 树附注计算失败, 跳过: ${String(err?.message ?? err)}`);
-			}
-		}
-
 		// ---- 注入一张 ledger 新卡 (独立 context, 每回合追加) ----
 		const { entry, prev } = out;
 		const entries = out.entries;
@@ -916,7 +993,6 @@ export async function apply(ctx) {
 			const billed = u + r + w;
 			return billed > 0 ? Math.round((r / billed) * 100) : null;
 		})();
-		const pct = delta !== null && prev && prev.total > 0 ? Math.round((delta / prev.total) * 100) : null;
 		let deltaKv;
 		if (prev) {
 			const du = Math.max(0, u - prev.u);
@@ -926,12 +1002,13 @@ export async function apply(ctx) {
 		} else {
 			deltaKv = "首次记账（下回合起显示增量）";
 		}
-		const stats = [
-			{ label: "合计预估", value: `¥${fmtMoney(entry.total)}`, strong: true, note: "本会话累计" },
-			{ label: "本回合", value: delta !== null ? `+¥${fmtMoney(delta)}` : "—", note: delta !== null ? (pct !== null ? `较上次 +${pct}%` : "较上次") : "首次记账" },
-			{ label: "计算次数", value: String(t), note: "每回合自动" },
-			...(treeStat ? [treeStat] : [])
-		];
+		// v0.3.4 §d.2：主数字标注「本会话口径」＋团队附录（成员数/团队累计/团队本回合增量，账本口径）
+		// ＋成员超阈值聚合提醒（节流）。组装逻辑在模块级 buildLedgerStats（离线判据同源、可正控）。
+		const stats = buildLedgerStats({
+			entry, prev, t,
+			teamChildCount: out.team.childCount, teamCum: out.team.cum, teamDelta: out.team.delta,
+			teamAlerts: out.team.alerts, teamDegraded: out.treeDegraded
+		});
 		const kv = [
 			{ k: "计算细则", v: `输入 ${fmtTokens(u + w)}×¥${p.inputMiss} + 缓存 ${fmtTokens(r)}×¥${p.inputHit} + 输出+推理 ${fmtTokens(o + entry.reasoning)}×¥${p.output} = ¥${fmtMoney(entry.total)}` },
 			{ k: "本回合增量", v: deltaKv },

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Task queue",
+    "description": "Park non-urgent prompts and auto-dispatch them during off-peak windows, at a scheduled time, or after a host restart.",
+    "detail": "README.md"
+  }
+}

@@ -11,8 +11,8 @@ name: publish-npm
 #        依赖 l1 的库（cost-pricing 依赖 cost-tier；banner-kit 依赖 host-compat）
 #   l4 = dsh-notice-banner dsh-bg-image dsh-quick-insert dsh-pwa dsh-mesh-panel
 #        依赖 l2/l3 的独立插件，互不依赖
-#   l5 = dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart
-#        费用与通知家族，依赖前面各层
+#   l5 = dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart dsh-taskqueue
+#        费用、通知与任务队列家族，依赖前面各层
 #
 # ── 幂等 / 重跑语义 ─────────────────────────────────────────────────────────────
 #   已存在的版本 npm 返回 403（EPUBLISHCONFLICT）⇒ 该包跳过、其余继续，工作流可安全重跑。
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       layer:
-        description: "发布层 (l1=纯库 / l2=host-compat / l3=价格与横幅库 / l4=独立插件 / l5=费用与通知 / all=按序全部)"
+        description: "发布层 (l1=纯库 / l2=host-compat / l3=价格与横幅库 / l4=独立插件 / l5=费用通知与任务队列 / all=按序全部)"
         required: true
         default: all
         type: choice
@@ -59,7 +59,7 @@ jobs:
           L2="dsh-host-compat"
           L3="dsh-cost-pricing dsh-banner-kit"
           L4="dsh-notice-banner dsh-bg-image dsh-quick-insert dsh-pwa dsh-mesh-panel"
-          L5="dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart"
+          L5="dsh-sessions-cost dsh-cost-ledger dsh-cost-guard dsh-balance dsh-notify dsh-graceful-restart dsh-taskqueue"
           case "$LAYER" in
             l1) PACKAGES="$L1" ;;
             l2) PACKAGES="$L2" ;;

@@ -46,7 +46,7 @@ window.__ModuleLoader__.load({
 		const SURFACE_ATTR = "data-bgimg-surface";
 		/** 页面底面最低浓度 (%): 保证任何壁纸下正文都可读; 用户"面板不透明度"更高时取更高值 */
 		const SURFACE_TINT_FLOOR = 62;
-		/** 兜底页的磨砂半径 (px): 与聊天消息列 (Md3f7G_column::before) 同一参数 ⇒ 未适配页面与已适配区域观感一致 */
+		/** 兜底页的磨砂半径 (px): 与聊天消息列 (Md3f7G_column / EvIC1a_column::before) 同一参数 ⇒ 未适配页面与已适配区域观感一致 */
 		const SURFACE_BLUR = 18;
 		/** 界面磨砂默认半径 (px): 兜底页与左侧栏共用; 设置卡「界面磨砂」滑块可调 */
 		const DEFAULT_SURFACE_BLUR = 18;
@@ -294,11 +294,15 @@ body {
    只作用于中间消息列, 两侧留白仍是清晰壁纸。
    v5.6: 模糊范围向左右各扩 16px (伪元素 inset 负值), 与下方输入框同宽
    (--dsh-composer-card-max-width = 748+32 = 780px), 不再紧贴文字边缘 */
-.Md3f7G_column {
+/* 8.0.1：宿主 0.2.2-rc.1 起聊天列为 .EvIC1a_column（旧哈希 .Md3f7G_column 已不存在）⇒ 新旧双写，
+   否则这一层「聊天列暗色磨砂遮罩」（38% 底 + blur 18px，参数硬编码、不随滑杆）永不渲染。 */
+.Md3f7G_column,
+.EvIC1a_column {
 	position: relative;
 	isolation: isolate;
 }
-.Md3f7G_column::before {
+.Md3f7G_column::before,
+.EvIC1a_column::before {
 	content: "";
 	position: absolute;
 	inset: 0 -16px;
@@ -314,7 +318,9 @@ body {
 		color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px,
 		color-mix(in srgb, var(--dsw-alias-bg-base) ${panel}%, transparent) 36px) !important;
 }
-.ydkMvW_root {
+/* 8.0.1：宿主 0.2.2-rc.1 的聊天根为 .EvIC1a_root（旧 .ydkMvW_root 已不存在）⇒ 新旧双写。 */
+.ydkMvW_root,
+.EvIC1a_root {
 	background-color: color-mix(in srgb, var(--dsw-alias-bg-base) ${details}%, transparent) !important;
 }
 @supports not (background: color-mix(in srgb, red 50%, blue)) {
@@ -323,7 +329,8 @@ body {
 		background-color: var(--dsw-specific-sidebar-fill) !important;
 	}
 	.wSkVaW_root,
-	.ydkMvW_root {
+	.ydkMvW_root,
+	.EvIC1a_root {
 		background-color: var(--dsw-alias-bg-base) !important;
 	}
 }`;
@@ -1926,7 +1933,7 @@ ${panelCss}
 			function detectSkinMode() {
 				if (typeof document === "undefined") return "vars";
 				try {
-					const ok = document.querySelector(".pI_x6G_frame, .hHd-Xa_root, .wSkVaW_root, .ydkMvW_root") !== null;
+					const ok = document.querySelector(".pI_x6G_frame, .hHd-Xa_root, .wSkVaW_root, .ydkMvW_root, .EvIC1a_root, .EvIC1a_column") !== null;
 					return ok ? "classes" : "vars";
 				} catch {
 					return "vars";

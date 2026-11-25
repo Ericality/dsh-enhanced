@@ -63,6 +63,8 @@ const CAPABILITY_KEYS = Object.freeze([
 	"commands",
 	"tools",
 	"agents",
+	// 2026-11-24 增补 r6（Agent Teams 团队成员判定，**待契约登记与用户签**）：团队服务存在性
+	"agentTeams",
 	"webServerRoute",
 	"hostVersion",
 	// 2026-11-21 增补 r5（用户批准，观察期至 2026-12-05）：同源中继用的两条路由 seam
@@ -397,6 +399,12 @@ function probeWebServerUpgrade(ws) {
 	return Boolean(ws && typeof ws.registerUpgrade === "function");
 }
 
+/** 2026-11-24 增补 r6：`agentTeams` 探测 = 宿主团队服务存在且具备 membership/listMembers。 */
+function probeAgentTeams(ctx) {
+	const svc = ctxService(ctx, "agentTeams");
+	return Boolean(svc && typeof svc.membership === "function" && typeof svc.listMembers === "function");
+}
+
 function detectCapabilities(ctx) {
 	const session = hostSessionModule();
 	const proto = session?.Session?.prototype;
@@ -434,6 +442,7 @@ function detectCapabilities(ctx) {
 		commands: ctxService(ctx, "commands") != null,
 		tools: ctxService(ctx, "tools") != null,
 		agents: ctxService(ctx, "agents") != null,
+		agentTeams: probeAgentTeams(ctx),
 		webServerRoute: webServerAny(ctx) != null,
 		// 2026-11-21 增补 r5（同源中继）：prefix 功能性探测（注册即 dispose）、upgrade 方法存在性
 		webServerPrefix: probeWebServerPrefix(webServerAny(ctx)),
@@ -506,7 +515,7 @@ let probeCount = 0;
 /** **服务类 key 子集**（取值 = "某宿主服务此刻在不在"，**随时间可变** ⇒ **不进 boot 快照**）。
  *  ★ 甲（`#A98` 裁定 2）：这 4 个键**每次 `hostInfo()` 都现探**；包/路径类键**仍走 boot 快照 ＋ 节流**。
  *  ⚠️ 节流口径**未变**：窗内复用、超窗重探 ⇒ **延迟上界 = 一个 `REPROBE_TTL_MS`**（不是"每次调用都真读"）。 */
-const SERVICE_KEYS = Object.freeze(["rpcHandle", "commands", "tools", "agents", "webServerRoute"]);
+const SERVICE_KEYS = Object.freeze(["rpcHandle", "commands", "tools", "agents", "agentTeams", "webServerRoute"]);
 
 /** **就绪通知**（丙）：`rpcHandle` 由"非 true"→"true" 的那一趟 `probe()` ⇒ **播报一次**（进程内恒 ≤1）。
  *  · 判据由**读数**驱动（`#A96` 裁定①），**不得**用 `inject` 是否存在代替；
@@ -878,6 +887,79 @@ function sessionOf(payload, session) {
 		if (!sid || !sessionResolver) return null;
 		return sessionResolver(sid) || null;
 	} catch { return null; }
+}
+
+/* ==========================================================================================
+ * 2026-11-24 增补 r6 `agentTeams` —— **Agent Teams 团队成员判定（R7：中间件持唯一宿主接触点）**
+ *
+ * 背景：宿主团队服务 `agentTeams`（`dsh-experimental-agent-team`）的 `membership(agent)` 需
+ *   **live Agent 作凭据**；插件不得直连宿主服务（ENV R7 / 契约 §2.4）。
+ *   ⇒ 本文件只提供 **seam 纯函数**；两个解析器由 `lib/index.js` 的 apply 注入（字面量 ctx.get +
+ *     惰性 + try/catch，**不外泄、不缓存服务引用**）。永不 throw、失败一律 `{ok:false,reason}`。
+ * @param session 会话对象或会话 id（取 `.id` / `.sessionId`）
+ * @returns {{ok:true,isMember:boolean,role:string,name:string|null,teamId:string|null}} | {{ok:false,reason:string}}
+ *   · `isMember` **只对 teammate 为 true**（lead 也是团队成员但主会话回合恒走 task.done，不吃本分类）
+ *   · 非团队成员（普通 subagent）⇒ 宿主 `membership()` 抛 TEAM_NOT_MEMBER ⇒ `{ok:false,reason}`，
+ *     调用方须回退 `subagent.done` 并如实记诊断（禁静默改写语义）。
+ * ========================================================================================== */
+
+let teamServiceResolver = null;
+let liveAgentResolver = null;
+
+/** **内部（非 §4 冻结面）**：注入团队服务/live Agent 解析器（仅同包 `lib/index.js` 调用）。 */
+export function setTeamResolvers(resolvers = {}) {
+	try {
+		teamServiceResolver = typeof resolvers?.teamService === "function" ? resolvers.teamService : null;
+		liveAgentResolver = typeof resolvers?.agentOf === "function" ? resolvers.agentOf : null;
+		return { ok: true };
+	} catch {
+		return { ok: false, reason: "bad-argument" };
+	}
+}
+
+/** 取团队服务：优先注入解析器，否则退回调用方传入 ctx（兼容测试/旧装配）。永不 throw。 */
+function teamServiceOf(ctx) {
+	try {
+		if (teamServiceResolver) return teamServiceResolver() || null;
+		return ctxService(ctx, "agentTeams");
+	} catch { return null; }
+}
+
+/** 取 live Agent：优先注入解析器，否则 ctx.get("agents").get(sid)。永不 throw。 */
+function liveAgentOf(sid, ctx) {
+	try {
+		if (liveAgentResolver) return liveAgentResolver(String(sid)) || null;
+		return ctxService(ctx, "agents")?.get?.(String(sid)) ?? null;
+	} catch { return null; }
+}
+
+/**
+ * §4.15 `teamMemberOf(session, ctx?)` —— 团队成员判定（seam；永不 throw）。
+ * 判定取不到（无服务/无 live agent/非成员/异常）⇒ `{ok:false,reason}`，**不猜测**。
+ */
+export function teamMemberOf(session, ctx) {
+	try {
+		const sid = typeof session === "string"
+			? session
+			: (session && (session.id ?? session.sessionId));
+		if (typeof sid !== "string" || !sid) return { ok: false, reason: "bad-session" };
+		const svc = teamServiceOf(ctx);
+		if (!svc || typeof svc.membership !== "function") return { ok: false, reason: "agentTeams" };
+		const agent = liveAgentOf(sid, ctx);
+		if (!agent) return { ok: false, reason: "agent-not-live" };
+		const m = svc.membership(agent);
+		if (!m || typeof m !== "object") return { ok: false, reason: "bad-membership" };
+		const role = typeof m.role === "string" ? m.role : "";
+		return {
+			ok: true,
+			isMember: role === "teammate",
+			role,
+			name: typeof m.name === "string" ? m.name : null,
+			teamId: m.id !== undefined ? String(m.id) : null
+		};
+	} catch (err) {
+		return { ok: false, reason: `not-member-or-error:${String(err?.message ?? err)}` };
+	}
 }
 
 export function appendNotice(session, payload) {

@@ -1,9 +1,9 @@
 # @ericality/dsh-cost-ledger
 
-安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.5`
+安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.6`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.5`
+安装：`dsh plugin --profile web add @ericality/dsh-cost-ledger@0.3.6`
 
 
 Per-session cost ledger for DSH — 会话账本: 回合结束自动记账, 每回合注入一张可折叠的 ledger 横幅卡片 (合计/差值/计算细则), 历史按会话独立保存并经 RPC 实时拉取。

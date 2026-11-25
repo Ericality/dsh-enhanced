@@ -30,10 +30,13 @@ export const Config = z.object({
 	image: z.string().default("").volatile(),
 	debugPath: z.boolean().default(false).volatile(),
 	look: z.object({
-		opacity: z.number().default(0.45),
-		blur: z.number().default(0),
-		surfaceBlur: z.number().default(0),
-		sidebarOpacity: z.number().default(0.6)
+		// 8.0.1：单位与 client 消费口径对齐（0-100 百分比 / px）。8.0.0 的 0.45/0.6 是比例口径，
+		// 经 client 的 Math.max(50, ...) 夹取与 0=跟随面板语义后会得到错误观感（侧栏近透明、无磨砂）。
+		opacity: z.number().default(78),
+		blur: z.number().default(14),
+		surfaceBlur: z.number().default(18),
+		// 0 = 跟随「面板不透明度」（client sidebarRaw>0 才单独生效）
+		sidebarOpacity: z.number().default(0)
 	}).volatile(),
 	folder: z.object({
 		root: z.string().default(""),
@@ -49,6 +52,15 @@ export const Config = z.object({
 		fetchTimeoutMs: z.number().default(20000)
 	}).volatile()
 });
+
+
+/** 8.0.1：旧值归一 —— 历史配置里若出现 0-1 比例（如 0.45/0.6），按百分比 ×100；其余原样。 */
+const toPercent = (v, fallback) => {
+	const n = Number(v);
+	if (!Number.isFinite(n)) return fallback;
+	if (n > 0 && n <= 1) return Math.round(n * 1000) / 10;
+	return n;
+};
 
 /** 设置服务（显式解析，避免 inject 守卫）。 */
 const settingsOf = (ctx) => { try { return ctx.get?.("settings", false) || null; } catch { return null; } };
@@ -69,7 +81,7 @@ export function readConfig(config) {
 		intervalMin: Number(val(config?.intervalMin, 30)) || 30,
 		image: val(config?.image, ""),
 		debugPath: val(config?.debugPath, false) === true,
-		look: { opacity: Number(look.opacity ?? 0.45), blur: Number(look.blur ?? 0), surfaceBlur: Number(look.surfaceBlur ?? 0), sidebarOpacity: Number(look.sidebarOpacity ?? 0.6) },
+		look: { opacity: Number(look.opacity ?? 78), blur: Number(look.blur ?? 14), surfaceBlur: Number(look.surfaceBlur ?? 18), sidebarOpacity: Number(look.sidebarOpacity ?? 0) },
 		folder: { root: String(folder.root ?? ""), path: String(folder.path ?? ""), recursive: folder.recursive !== false, allowedExts: Array.isArray(folder.allowedExts) ? folder.allowedExts : [".jpg", ".jpeg", ".png", ".webp", ".gif"], lockMs: Number(folder.lockMs ?? 120000) },
 		daily: { source: String(daily.source ?? ""), refreshTime: String(daily.refreshTime ?? "00:10"), cacheTtlMs: Number(daily.cacheTtlMs ?? 43200000), fetchTimeoutMs: Number(daily.fetchTimeoutMs ?? 20000) }
 	};
@@ -144,11 +156,13 @@ export async function migrateLegacy(ctx) {
 			intervalMin: Number(b.intervalMin) > 0 ? Number(b.intervalMin) : 30,
 			image: String(b.image ?? ""),
 			debugPath: b.debugPath === true,
+			// 8.0.1：旧根状态只有 opacity/blur（百分比/px）。新键（surfaceBlur/sidebarOpacity）缺省时
+			// **回填 client 同口径默认值**（18px / 0=跟随面板），而不是 8.0.0 的 0 / 0.6（单位错 ⇒ 遮罩关闭）。
 			look: {
-				opacity: Number(b.opacity ?? 0.45),
-				blur: Number(b.blur ?? 0),
-				surfaceBlur: Number(b.surfaceBlur ?? 0),
-				sidebarOpacity: Number(b.sidebarOpacity ?? 0.6)
+				opacity: toPercent(b.opacity, 78),
+				blur: Number.isFinite(Number(b.blur)) ? Number(b.blur) : 14,
+				surfaceBlur: Number.isFinite(Number(b.surfaceBlur)) ? Math.max(0, Math.min(40, Number(b.surfaceBlur))) : 18,
+				sidebarOpacity: b.sidebarOpacity === undefined || b.sidebarOpacity === null || b.sidebarOpacity === "" ? 0 : Math.max(0, Math.min(100, toPercent(b.sidebarOpacity, 0)))
 			},
 			folder: {
 				root: String(c.baseDir || b.baseDir || ""),

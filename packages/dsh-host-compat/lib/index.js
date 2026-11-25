@@ -36,6 +36,7 @@ import {
 	resolveTurnForEvent,
 	setProbeRootCtx,
 	setSessionResolver,
+	setTeamResolvers,
 	setWebServerService,
 } from "./seams.js";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
@@ -48,7 +49,7 @@ export const name = "dsh-host-compat";
 /** 宿主服务依赖：RPC 注册 + 客户端连接（apply 在 connection 就绪后执行，保证 §4.6 注册成功） */
 export const inject = ["connection", "webServer"];
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.2"; // 0.1.2: 增补 r6 agentTeams（团队成员判定 seam；契约登记与用户签待办）
 const CHANNEL = "/host-compat"; // §6
 const BANNER_KIND = "compat"; // §8（RD-7）
 const OWN_ID = "dsh-host-compat";
@@ -1136,6 +1137,16 @@ export async function apply(ctx) {
 		} catch (err) {
 			warn(`§4.4 写入 sink 注入失败 (${String(err?.message ?? err)}) → 横幅写自有 store 面将降级为 reason:"noticeState"`);
 		}
+
+		// ★2026-11-24 增补 r6：Agent Teams 团队成员判定（seam `teamMemberOf`）。
+		//   宿主接触点**全在本文件**（字面量 ctx.get + 惰性 + try/catch）；seams 纯函数零宿主接触。
+		//   服务可能晚到/退出 ⇒ 每次调用现解析，**禁止** apply 期缓存服务引用。
+		try {
+			setTeamResolvers({
+				teamService: () => { try { return rootCtx?.get?.("agentTeams") || null; } catch { return null; } },
+				agentOf: (sid) => { try { return rootCtx?.get?.("agents")?.get?.(sid) || null; } catch { return null; } }
+			});
+		} catch { /* 旧 seams ⇒ 忽略（插件方按缺能力降级） */ }
 
 		const rpc = tryRegisterOwnRpc(); // ③（幂等：成功过即跳过）
 		if (!rpc.ok) warn(`RPC 通道 ${CHANNEL} 注册失败 (${rpc.reason})`);

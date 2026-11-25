@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 const _cardId = (ns, ...parts) => (parts.some((x) => x === null || x === undefined || x === "") ? null
 	: createHash("sha256").update([ns, ...parts].join("|")).digest("hex").slice(0, 32));
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { chmod, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 
@@ -16,6 +16,11 @@ const DSH_HOME = process.env.DSH_HOME || joinPath(homedir(), ".dsh");
 const PLUGIN_DATA = joinPath(DSH_HOME, "plugin-data", "notify");
 const COMPAT_DIR = process.env.DSH_COMPAT_DIR || joinPath(DSH_HOME, "plugin-data", "host-compat");
 const LOG_DIR = joinPath(DSH_HOME, "logs", "notify");
+// ================= 2026-11-24（task-16）设备健康记录（只读可视化；不改发送行为） =================
+/** 健康记录文件：插件自有数据目录；0600、节流写；写失败只告警，绝不影响发送。 */
+const HEALTH_FILE = process.env.DSH_NOTIFY_HEALTH_FILE || joinPath(PLUGIN_DATA, "device-health.json");
+const HEALTH_SCHEMA = 1;
+const HEALTH_WRITE_THROTTLE_MS = 2000;
 
 /**
  * @deepseek-ai/dsh-notify (本地辅助插件, 非官方包)
@@ -137,12 +142,14 @@ export const inject = ["commands", "connection"];
  *    它 ＝ 会话标题/用户提问/答复的**唯一读取面**（宿主 0.1.2-rc.1 起 `Session` 无 `events` 属性，
  *    只有 `snapshotEvents()`／`ownEvents()`）；缺它 ⇒ 标题**如实降级为会话短 id** ＋ 日志 ＋ 面板可见。
  *    §3 冻结键集**已含该 key**（`host-compat/seams.js:32-43`）⇒ **零契约变更、零新键**（复用现成资产）。 */
-const REQUIRES = ["sessionEvents", "sessionAppend", "eventTypeRegistry", "rpcHandle", "commands"]; // `#A57`: 通道面优先 channelFace（fetch）；rpcHandle 仍作旧宿主回落，须申报
+const REQUIRES = ["sessionEvents", "sessionAppend", "eventTypeRegistry", "rpcHandle", "commands", "agentTeams"]; // `#A57`: 通道面优先 channelFace（fetch）；rpcHandle 仍作旧宿主回落，须申报
+/** 2026-11-24（task-10）增补 `agentTeams`：Agent Teams 团队成员判定（host-compat 增补 r6 seam `teamMemberOf`，
+ *  中间件持宿主团队服务接触点 ⇒ 本插件零直连，守 ENV R7）。缺该 key ⇒ 团队成员判定如实降级（回退 subagent.done + 诊断）。 */
 /** 缺这些能力 ⇒ BLOCKED (§3/D1: 缺失会写坏数据 — 未注册事件类型进会话日志 ⇒ 会话无法加载) */
 /** 缺这些能力 ⇒ **路径级** BLOCKED (RD-20; 与 package.json `dshCompat.blocked` 同源, 此处仅为"读 package.json 失败"时的回退) */
 const BLOCKED_FALLBACK = ["eventTypeRegistry"];
 /** §3 key → §4 seam 函数名 (§4 v1 冻结面); 无 seam 的 key (§3 `commands`, RD-10) 走宿主服务存在性 */
-const SEAM_OF = { sessionAppend: "appendNotice", eventTypeRegistry: "ensureEventTypes", rpcHandle: "rpcHandle" };
+const SEAM_OF = { sessionAppend: "appendNotice", eventTypeRegistry: "ensureEventTypes", rpcHandle: "rpcHandle", agentTeams: "teamMemberOf" };
 /** 自身元信息: 版本 + 路径级阻断清单 (RD-20)。**禁止静态 import JSON** (避免与 package.json 双写漂移);
  *  运行时读自身 package.json; 读失败 ⇒ {version:"unknown", blocked:null} (调用方回退内置常量并告警)。 */
 function ownMeta() {
@@ -230,6 +237,9 @@ export const NOTIFY_TYPES = [
 	// 2026-10-02 (`#A424`) 新增第 15 项：子 agent 会话的 `turn/end` 走本 type（独立可路由, 可单独选渠道/关闭）。
 	// `group`/`level` 与 `task.done` 同档（DSH-任务 / active）—— 只增"选渠道"这一维, 不新增文案分叉。
 	{ type: "subagent.done", label: "子 agent 完成（回合结束汇总）", group: "DSH-任务", level: "active", hasProducer: true },
+	// 2026-11-24（task-10 用户口径「就做一个新的开关 把智能体团队成员做进去」）：Agent Teams 团队成员的
+	// turn/end 走独立可路由 type；**默认路由为空（不推）**，由设置页单独开渠道（见 DEFAULT_OFF_TYPES）。
+	{ type: "team.member.done", label: "智能体团队成员完成", group: "DSH-任务", level: "active", hasProducer: true },
 	{ type: "cost.alert", label: "费用提醒", group: "DSH-费用", level: "active", hasProducer: true },
 	{ type: "queue.dispatched", label: "队列派发", group: "DSH-队列", level: "passive", hasProducer: true },
 	{ type: "queue.cancelled", label: "队列取消", group: "DSH-队列", level: "passive", hasProducer: true },
@@ -547,6 +557,9 @@ export function resolveRouteIds(hub, type) {
 	const enabledIds = new Set(enabled.map((d) => d.id));
 	const pick = (list) => [...new Set(asArray(list).map((x) => String(x)))].filter((id) => enabledIds.has(id));
 	if (Object.prototype.hasOwnProperty.call(hub?.routes ?? {}, String(type))) return pick(hub.routes[String(type)]);
+	// 2026-11-24（task-10）：默认不推类型（team.member.done）不落 routeDefault 兜底；
+	// 显式 routes[type] 已在上行优先处理（设置页"单独开渠道"即写该键）。
+	if (DEFAULT_OFF_TYPES.has(String(type))) return [];
 	if (asArray(hub?.routeDefault).length) return pick(hub.routeDefault);
 	return sortedDevices(enabled).map((d) => d.id);
 }
@@ -750,28 +763,8 @@ async function sendToDevices(devices, type, title, pages, compose, varsIn = {}) 
 		const tplList = currentTemplateList();
 		const buildFor = (d, seps, segs) => {
 			const legacy = pagesFor(d, seps, segs);
-			const eff = effectiveTemplateFor(d, tplList);
-			let titleOut = title;
-			let pagesOut = legacy.pages;
-			const notes = [];
-			if (eff.missing) notes.push(`设备选择的模板 "${eff.selectedTemplateId}" 不存在 ⇒ 已回落 "${eff.templateName}"（不静默）`);
-			if (eff.title || eff.body) {
-				const vars = buildTemplateVars({ type, title, pages: legacy.pages, seps, device: d, extra: { ...varsIn, tplEmoji: eff.emoji } });
-				if (eff.title) {
-					const tr = renderTemplate(eff.title, vars);
-					if (tr.unknown.length) notes.push(`标题模板含未知占位符：${tr.unknown.map((k) => `{{${k}}}`).join("、")}（原样保留）`);
-					// 群晖没有独立标题字段 ⇒ title 模板只作用于 Bark（正文里可用 {{title}} 自行嵌入）
-					if (d.kind === "bark" && tr.text.trim()) titleOut = tr.text;
-				}
-				if (eff.body) {
-					const br = renderTemplate(eff.body, vars);
-					if (br.unknown.length) notes.push(`正文模板含未知占位符：${br.unknown.map((k) => `{{${k}}}`).join("、")}（原样保留）`);
-					const p = splitTemplatedText(d.kind, br.text, seps);
-					if (p.length) pagesOut = p;
-					else notes.push("模板渲染结果为空 ⇒ 已回退旧版组稿（不静默）");
-				}
-			}
-			return { pages: pagesOut, adjusted: legacy.adjusted, title: titleOut, tpl: { mode: eff.body ? "custom" : "legacy", titleSource: eff.titleSource, bodySource: eff.bodySource }, notes };
+			const built = applyTemplateForDevice({ device: d, type, title, legacyPages: legacy.pages, seps, varsExtra: varsIn, tplList });
+			return { pages: built.pages, adjusted: legacy.adjusted, title: built.title, tpl: built.tpl, notes: built.notes };
 		};
 		// ★件G：Bark 桶**有界并发**（`barkConcurrency`，默认 1 ＝ 串行 ＝ 逐字现状）；Synology 桶**仍逐设备逐页串行**（页间隔恒 1.5s，限流语义不变）
 		const _opts = currentOptions();
@@ -796,7 +789,9 @@ async function sendToDevices(devices, type, title, pages, compose, varsIn = {}) 
 				lastSendStats.set(d.id, { at: Date.now(), type, pages: devPages.length, bodyLen: body.length, adjusted: built.adjusted, segs: segRes.segs, tpl: built.tpl, tplNotes: built.notes });
 				// 「将推 N 条」的实测来源（设置卡显示用）＋ 413 定因所需的请求体长度
 				debug(`send ${type} → ${d.id}(bark): pages=${devPages.length} body=${body.length}B${deviceHasCustomSeps(d) ? " [自定义分隔符]" : ""}${built.tpl.mode === "custom" ? " [自定义模板]" : ""}`);
+				const _t0 = Date.now();
 				const r = await withRetry(d, `${type} → ${d.id}(bark)`, () => sendBarkDevice(d, built.title, body, typeSpec(type), _opts.barkTimeoutMs, bp), _opts.barkRetries);
+				try { recordDeviceSend(d.id, type, { ok: r.ok, error: r.error, durationMs: Date.now() - _t0, pages: devPages.length }); } catch { /* 记录失败不影响发送 */ }
 				barkOut[i] = r.ok ? { deviceId: d.id, status: "fulfilled" } : { deviceId: d.id, status: "rejected", error: sanitize(r.error?.message ?? r.error) };
 			}
 		};
@@ -824,16 +819,20 @@ async function sendToDevices(devices, type, title, pages, compose, varsIn = {}) 
 				for (const n of built.notes) debug(`payload: 设备 ${d.id} ${n}`);
 				debug(`send ${type} → ${d.id}(synology): pages=${devPages.length}${deviceHasCustomSeps(d) ? " [自定义分隔符]" : ""}${built.tpl.mode === "custom" ? " [自定义模板]" : ""}`);
 				const devOut = [];
+				const _t0 = Date.now();
+				let _firstErr = null;
 				for (let pi = 0; pi < devPages.length; pi++) {
 					const p = devPages[pi];
 					// ★件G：群晖重试**在逐页循环内**（重试不改变页间隔 ⇒ 限流语义不变）
 					const r = await withRetry(d, `${type} → ${d.id}(synology) 第 ${pi + 1} 页`, () => sendSynologyDevice(d, p, _opts.synologyTimeoutMs), _opts.synologyRetries);
 					// ★件J-乙：「将推 N 条」统计**按页更新**（逐页串行时最后一页即末态；并发时不再由"设备开始时的快照"抢占）
 					lastSendStats.set(d.id, { at: Date.now(), type, pages: devPages.length, bodyLen: String(p).length, adjusted: built.adjusted, segs: segRes.segs, tpl: built.tpl, tplNotes: built.notes });
+					if (!r.ok && _firstErr === null) _firstErr = r.error;
 					devOut.push(r.ok ? { deviceId: d.id, status: "fulfilled" } : { deviceId: d.id, status: "rejected", error: sanitize(r.error?.message ?? r.error) });
 					// ★不破坏项（硬）：**页间隔恒 1500ms**（与 `synologyConcurrency` 取值无关；并发只作用在"多台之间"）
 					await new Promise((r2) => setTimeout(r2, SEND_PAGE_INTERVAL_MS));
 				}
+				try { recordDeviceSend(d.id, type, { ok: devOut.every((x) => x.status === "fulfilled"), error: _firstErr, durationMs: Date.now() - _t0, pages: devPages.length }); } catch { /* 记录失败不影响发送 */ }
 				synOut[i] = devOut;
 			}
 		};
@@ -1020,9 +1019,217 @@ export function nextDeviceId(hub, kind) {
 	throw new HubError("bad-request", "设备数量已达上限");
 }
 
+/* ==========================================================================================
+ * 2026-11-24（task-16）「当前配置与状态」MVP：设备健康记录 + 配置元信息
+ *   - 用户口径：通知要「把现在的配置暴露出来」；群晖失联时「只说连接超时，不知道问题在哪里」。
+ *   - 本段只读数据面：记录发送结果/错误分类、持久化到自有文件、经 get 暴露；**不改任何发送行为**。
+ *   - 脱敏：错误详情先 sanitize（URL/token 掩码）再截断；hub 路径只回尾段；响应中无明文 URL/key。
+ * ========================================================================================== */
+
+/** 错误分类映射（纯函数；供在线记录与离线判据共用）。 */
+export function classifySendError(errOrText) {
+	const t = typeof errOrText === "string" ? errOrText : String(errOrText?.message ?? errOrText ?? "");
+	if (!t) return "unknown";
+	if (/aborted due to timeout|AbortError|timed? ?out|ETIMEDOUT/i.test(t)) return "timeout";
+	if (/ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|fetch failed|network error/i.test(t)) return "connect";
+	if (/certificate|self.signed|CERT_|TLS|SSL|unable to verify|cert/i.test(t)) return "tls";
+	if (/413|Payload Too Large/i.test(t)) return "http_413";
+	if (/HTTP 4\d\d/i.test(t)) return "http_4xx";
+	if (/HTTP 5\d\d/i.test(t)) return "http_5xx";
+	if (/success:\s*false|Synology success/i.test(t)) return "protocol";
+	return "unknown";
+}
+
+/** 错误分类中文标签（客户端/报告共用口径）。 */
+export const SEND_ERROR_CLASS_LABELS = Object.freeze({
+	timeout: "超时",
+	connect: "连接失败",
+	tls: "TLS/证书",
+	http_413: "页面 413（内容过大）",
+	http_4xx: "HTTP 4xx",
+	http_5xx: "HTTP 5xx",
+	protocol: "协议拒绝",
+	unknown: "未知"
+});
+
+/** 路径脱敏：只回末两段（永不回 DSH_HOME 根前缀）。 */
+function pathTail(p) {
+	const parts = String(p ?? "").split("/").filter(Boolean);
+	return `…/${parts.slice(-2).join("/")}`;
+}
+
+const deviceHealth = new Map(); // deviceId -> 健康记录
+let healthLoaded = false;
+let healthUpdatedAt = "";
+let healthWriteError = "";
+let healthWriteTimer = null;
+let healthWriteWarned = false;
+
+/** 加载健康记录（幂等；文件缺失/损坏 ⇒ 空表 + debug，不抛）。 */
+function loadHealthFile() {
+	if (healthLoaded) return;
+	healthLoaded = true;
+	try {
+		const raw = JSON.parse(readFileSync(HEALTH_FILE, "utf8"));
+		if (raw && raw.devices && typeof raw.devices === "object") {
+			for (const [id, rec] of Object.entries(raw.devices)) if (rec && typeof rec === "object") deviceHealth.set(String(id), rec);
+		}
+		healthUpdatedAt = typeof raw?.updatedAt === "string" ? raw.updatedAt : "";
+	} catch (err) {
+		if (err && err.code !== "ENOENT") debug(`health: 读取 ${pathTail(HEALTH_FILE)} 失败（按空表继续）: ${sanitize(err?.message ?? err)}`);
+	}
+}
+
+/** 节流落盘（2s 合并；失败只告警一次，不影响发送）。 */
+function scheduleHealthWrite() {
+	if (healthWriteTimer) return;
+	try {
+		healthWriteTimer = setTimeout(() => {
+			healthWriteTimer = null;
+			void flushHealthFile();
+		}, HEALTH_WRITE_THROTTLE_MS);
+		healthWriteTimer.unref?.();
+	} catch { /* 定时器不可用 ⇒ 跳过持久化 */ }
+}
+
+async function flushHealthFile() {
+	try {
+		mkdirSync(PLUGIN_DATA, { recursive: true });
+		const payload = {
+			schema: HEALTH_SCHEMA,
+			updatedAt: healthUpdatedAt || new Date().toISOString(),
+			fileHint: pathTail(HEALTH_FILE),
+			devices: Object.fromEntries(deviceHealth)
+		};
+		const tmp = `${HEALTH_FILE}.tmp`;
+		await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+		await rename(tmp, HEALTH_FILE);
+		try { await chmod(HEALTH_FILE, 0o600); } catch { /* 挂载不支持 chmod 时忽略 */ }
+		healthWriteError = "";
+	} catch (err) {
+		healthWriteError = sanitize(err?.message ?? err);
+		if (!healthWriteWarned) {
+			healthWriteWarned = true;
+			logger?.warn?.(`dsh-notify: 设备健康记录写盘失败（仅内存态，不影响发送）: ${healthWriteError}`);
+		}
+	}
+}
+
+/**
+ * 记录一次设备发送结果（在线发送路径调用；test/导出判据亦可调用）。
+ * @param {string} deviceId 设备 id
+ * @param {string} type 通知类型
+ * @param {{ok:boolean,error?:any,durationMs?:number,pages?:number}} info 结果
+ * @returns {object|null} 更新后的记录（异常时 null，绝不 throw）
+ */
+export function recordDeviceSend(deviceId, type, info = {}) {
+	try {
+		loadHealthFile();
+		const id = String(deviceId ?? "");
+		if (!id) return null;
+		const rec = deviceHealth.get(id) || { deviceId: id, okCount: 0, failCount: 0, consecutiveFails: 0 };
+		const at = new Date().toISOString();
+		rec.lastAt = at;
+		rec.lastType = String(type ?? "");
+		rec.lastDurationMs = Number.isFinite(info.durationMs) ? Math.max(0, Math.round(info.durationMs)) : null;
+		rec.lastPages = Number.isInteger(info.pages) ? info.pages : null;
+		if (info.ok === true) {
+			rec.lastOkAt = at;
+			rec.okCount = (rec.okCount || 0) + 1;
+			rec.consecutiveFails = 0;
+			rec.lastErrorClass = null;
+			rec.lastErrorDetail = null;
+		} else {
+			rec.lastFailAt = at;
+			rec.failCount = (rec.failCount || 0) + 1;
+			rec.consecutiveFails = (rec.consecutiveFails || 0) + 1;
+			rec.lastErrorClass = info.errorClass || classifySendError(info.error);
+			rec.lastErrorDetail = sanitize(String(info.error?.message ?? info.error ?? "unknown")).slice(0, 200);
+		}
+		deviceHealth.set(id, rec);
+		healthUpdatedAt = at;
+		scheduleHealthWrite();
+		return { ...rec };
+	} catch (err) {
+		debug(`health: 记录失败（忽略）: ${sanitize(err?.message ?? err)}`);
+		return null;
+	}
+}
+
+/** 健康记录快照（get 用；只读、脱敏、按 deviceId 排序）。 */
+export async function readDeviceHealth() {
+	loadHealthFile();
+	return {
+		schema: HEALTH_SCHEMA,
+		file: pathTail(HEALTH_FILE),
+		updatedAt: healthUpdatedAt || null,
+		writeError: healthWriteError || null,
+		labels: SEND_ERROR_CLASS_LABELS,
+		devices: [...deviceHealth.values()]
+			.map((r) => ({ ...r }))
+			.sort((a, b) => String(a.deviceId).localeCompare(String(b.deviceId)))
+	};
+}
+
+/** 配置元信息（get 用；路径脱敏；与内置默认的差异摘要 + 路由/模板摘要）。 */
+export async function buildConfigMeta(hub) {
+	let mtime = null, size = null;
+	try { const st = await stat(HUB_FILE); mtime = new Date(st.mtimeMs).toISOString(); size = st.size; } catch { /* 未生成 */ }
+	const opts = normalizeOptions(hub?.options);
+	const optDef = optionDefaults();
+	const optionsDiff = Object.keys(optDef).filter((k) => opts[k] !== optDef[k]).map((k) => ({ key: k, current: opts[k], default: optDef[k] }));
+	const devs = asArray(hub?.devices);
+	const tplList = templateListOf(hub);
+	const builtinIds = ["bark-default", "synology-default"];
+	const defaultsById = Object.fromEntries(defaultTemplates().map((t) => [t.id, t]));
+	const templatesEdited = builtinIds.filter((id) => {
+		const cur = tplList.find((t) => t.id === id), def = defaultsById[id];
+		return cur && def && (String(cur.title ?? "") !== String(def.title ?? "") || String(cur.body ?? "") !== String(def.body ?? "") || String(cur.emoji ?? "") !== String(def.emoji ?? ""));
+	});
+	return {
+		pluginVersion: ownMeta().version,
+		file: pathTail(HUB_FILE),
+		mtime,
+		size,
+		hubVersion: hub?.version ?? null,
+		schemaVersion: Number.isInteger(hub?.schemaVersion) ? hub.schemaVersion : null,
+		migratedAt: typeof hub?.migratedAt === "string" ? hub.migratedAt : null,
+		deviceCount: devs.length,
+		enabledCount: devs.filter((d) => d.enabled !== false).length,
+		templateCount: tplList.length,
+		customTemplateCount: tplList.filter((t) => !builtinIds.includes(t.id)).length,
+		routeDefault: asArray(hub?.routeDefault),
+		routes: NOTIFY_TYPES.map((t) => {
+			const has = Object.prototype.hasOwnProperty.call(hub?.routes ?? {}, t.type);
+			const configured = has ? (asArray(hub.routes[t.type]).length ? "custom" : "off") : "inherit";
+			return { type: t.type, configured, effective: resolveRouteIds(hub, t.type) };
+		}),
+		defaultsDiff: {
+			options: optionsDiff,
+			routeDefaultIsDefault: asArray(hub?.routeDefault).length === 0,
+			templatesEdited,
+			devicesWithCustomSeps: devs.filter((d) => deviceHasCustomSeps(d)).length,
+			devicesWithCustomSegs: devs.filter((d) => deviceHasCustomSegs(d)).length,
+			devicesWithOverrides: devs.filter((d) => typeof d.tplTitle === "string" || typeof d.tplBody === "string").length
+		},
+		templates: {
+			total: tplList.length,
+			builtin: builtinIds.filter((id) => tplList.some((t) => t.id === id)),
+			custom: tplList.filter((t) => !builtinIds.includes(t.id)).map((t) => ({ id: t.id, name: t.name })),
+			byDevice: devs.map((d) => {
+				const eff = effectiveTemplateFor(d, tplList);
+				return { deviceId: d.id, deviceName: d.name, templateId: eff.templateId, templateName: eff.templateName, titleSource: eff.titleSource, bodySource: eff.bodySource };
+			})
+		},
+		healthFile: pathTail(HEALTH_FILE)
+	};
+}
+
 /** 设置卡快照 (get) —— v0.7.0 增补 `options` / `effective` / `types[].hasProducer` (§4)。 */
 export async function snapshotHub() {
 	const hub = await loadHub();
+	const health = await readDeviceHealth();
+	const config = await buildConfigMeta(hub);
 	// effective[type] = resolveRouteIds 的结果 (客户端"实际发往谁"以此为准, 不得自行重算)
 	const effective = {};
 	for (const t of NOTIFY_TYPES) effective[t.type] = resolveRouteIds(hub, t.type);
@@ -1033,7 +1240,12 @@ export async function snapshotHub() {
 		routes: hub.routes,
 		options: normalizeOptions(hub.options),
 		types: NOTIFY_TYPES.map((t) => ({ type: t.type, label: t.label, group: t.group, level: t.level, hasProducer: t.hasProducer === true })),
+		// 2026-11-24（task-10）：团队判定降级诊断（取不到 ⇒ 团队成员回退 subagent.done 的只读计数器）
+		teamSeam: teamSeamStatus(),
 		effective,
+		// 2026-11-24（task-16）：设备健康记录 + 配置元信息（只读；旧客户端忽略即可，additive）
+		health,
+		config,
 		allDeviceIds: asArray(hub.devices).map((d) => d.id),
 		// 件B: 分隔符元数据（位置/默认/键）+ 生效面（客户端按此渲染，避免两套口径）
 		sepMeta: SEP_SPECS.map((s) => ({ key: s.key, label: s.label, pos: s.pos, def: s.def })),
@@ -1147,10 +1359,16 @@ export async function saveTemplate(payload = {}) {
 	const entry = { id, name, emoji, title, body };
 	const next = idIn ? list.map((t) => (t.id === id ? entry : t)) : [...list, entry];
 	const persisted = next.map(({ builtin, ...rest }) => rest);
+	// 2026-11-24（task-17）：模板合法性警告（可见、不阻断保存；发送侧兼容行为不变）
+	const warnings = [
+		...templateWarnings(title).map((w) => ({ ...w, field: "title", message: `标题模板：${w.message}` })),
+		...templateWarnings(body).map((w) => ({ ...w, field: "body", message: `正文模板：${w.message}` }))
+	];
+	for (const w of warnings) info.push({ id, field: w.field, note: w.message });
 	const saved = await saveHub({ ...hub, templates: persisted });
 	debug(`notify-hub: saveTemplate id=${id} name=${name} title=${title ? title.length + "B" : "empty"} body=${body ? body.length + "B" : "empty"} (${idIn ? "edit" : "add"})`);
 	for (const n of info) debug(`notify-hub: saveTemplate id=${id} ${n.note}`);
-	return { id, template: { ...entry, builtin: id === "bark-default" || id === "synology-default" }, templates: templateListOf(saved), info };
+	return { id, template: { ...entry, builtin: id === "bark-default" || id === "synology-default" }, templates: templateListOf(saved), info, warnings };
 }
 
 /**
@@ -1188,10 +1406,13 @@ export async function setTemplates(payload = {}) {
 
 /**
  * v0.9.1: 模板预览（**零网络、零写盘**）。
- * payload：`{ templateId? , deviceId? , kind?, type?, ...样例句柄 }`。
- * - `deviceId` ⇒ 按该设备实际生效模板（含设备 override）；
- * - `templateId` ⇒ 预览该模板（不绑定设备）；`kind` 只决定 Bark 标题是否加前缀 / 分页上限；
- * - 都没给 ⇒ 该 kind 的内置默认模板。
+ * 2026-11-24（task-17，用户裁「模板只做所见即所得即可」）：**与发送共用同一渲染入口**
+ *   `applyTemplateForDevice`（legacy 正文按 seps/segs 组好后套同一套模板），并返回按渠道的最终发送字段：
+ *   `delivery = { kind, titleSupported, title, body(bark 拼接后)/pages(逐条) }`——同一输入下与真实发送逐字一致；
+ *   另返回 `warnings`（花括号不配对/未知占位符；save 路径同款）。
+ * payload：`{ templateId?, deviceId?, kind?, type?, pages?, title?, status?, emoji?, question?, answer?, footer?, ... }`
+ *   - 传 `pages`（字符串数组）⇒ 视为生产者已组好的 legacy 正文（判据对撞用：与发送完全同输入）；
+ *   - 其余字段仅用于样本渲染（缺省同旧行为：空样本 + notes 点名）。
  */
 export async function previewTemplate(payload = {}) {
 	const hub = await loadHub();
@@ -1215,44 +1436,45 @@ export async function previewTemplate(payload = {}) {
 		: (tplRec
 			? { id: tplRec.id, name: tplRec.name, title: tplRec.title, body: tplRec.body, titleSource: "template", bodySource: "template", templateId: tplRec.id, templateName: tplRec.name, selectedTemplateId: tplRec.id, missing: false }
 			: effectiveTemplateFor({ kind }, list));
-	const typeSeps = resolveDeviceSeps(device ?? { id: "preview" }, type).seps;
+	const devFor = device ?? { id: "preview", name: "预览设备", kind };
+	const typeSeps = resolveDeviceSeps(devFor, type).seps;
+	const typeSegs = resolveDeviceSegs(devFor, type).segs;
 	const [defEmoji, defStatus] = TYPE_STATUS[type] ?? ["", typeSpec(type).label];
 	const sample = {
 		...TPL_SAMPLE,
 		status: defStatus, emoji: defEmoji,
 		...(device ? { device: device.id, deviceName: device.name, kind: device.kind } : { kind })
 	};
-	for (const k of ["title", "status", "emoji", "session", "sid", "turn", "elapsedMs", "reason", "question", "answer", "summary", "footer", "body"]) {
+	for (const k of ["title", "status", "emoji", "session", "sid", "turn", "elapsed", "elapsedMs", "reason", "question", "answer", "summary", "footer", "body"]) {
 		if (payload?.[k] !== undefined) sample[k] = payload[k];
 	}
-	const vars = buildTemplateVars({ type, title: sample.title, pages: [sample.body || ""], seps: typeSeps, device: device ?? { id: "preview", name: "预览设备", kind }, extra: { ...sample, tplEmoji: eff.emoji } });
-	const base = {
-		kind, type, deviceId: device?.id ?? null, templateId: eff.templateId ?? tplRec?.id ?? "", templateName: eff.templateName ?? tplRec?.name ?? "",
-		source: { title: eff.titleSource, body: eff.bodySource }
-	};
-	if (!eff.body) {
-		const segs = resolveDeviceSegs(device ?? {}, type).segs;
-		const legacy = composeSynologyPages(sample.title, sample.question, sample.answer, sample.footer, typeSeps, segs);
-		return {
-			...base, mode: "legacy",
-			title: sample.title,
-			body: legacy.join("\n\n"),
-			pages: legacy,
-			notes: ["该模板正文为空 ⇒ 本次预览＝旧版组稿（真实发送同样走 legacy，逐字不变）", "预览不含真实标题/正文/问答（发送时才有）"]
-		};
-	}
-	const r = renderForDevice({ kind, tpl: eff, vars, seps: typeSeps });
-	const used = new Set(r.used || []);
-	const missing = [...used].filter((k) => TPL_UNAVAILABLE_PREVIEW.has(k));
-	if (missing.length) r.notes.push(`预览中这些占位符无真实值，按空串渲染：${missing.map((k) => "{{" + k + "}}").join("、")}（真实发送时才有）`);
-	if (!device) r.notes.push("未指定预览设备 ⇒ 设备名/kind/分隔符按空/默认渲染");
+	// legacy 正文：优先用调用方给的 pages（判据对撞＝与发送同输入）；否则按生产者同款组稿函数现组。
+	let legacyPages;
+	if (Array.isArray(payload?.pages)) legacyPages = payload.pages.map((x) => String(x)).filter((x) => x !== "");
+	else if (PAYLOAD_TYPES.has(type)) legacyPages = composeSynologyPages(sample.title, sample.question, sample.answer, sample.footer, typeSeps, typeSegs);
+	else legacyPages = [String(sample.body ?? "")].filter((x) => x !== "");
+	const built = applyTemplateForDevice({ device: devFor, type, title: sample.title, legacyPages, seps: typeSeps, varsExtra: { ...sample }, tplList: list });
+	const bp = resolveBarkParams(devFor, type);
+	const barkBody = built.pages.join(typeSeps.sepPageJoin);
+	const delivery = kind === "bark"
+		? { kind, titleSupported: true, title: built.title, body: barkBody, pages: built.pages }
+		: { kind, titleSupported: false, title: null, body: null, pages: built.pages };
+	const warnings = [
+		...templateWarnings(eff.title).map((w) => ({ ...w, field: "title", message: `标题模板：${w.message}` })),
+		...templateWarnings(eff.body).map((w) => ({ ...w, field: "body", message: `正文模板：${w.message}` }))
+	];
+	const notes = [...built.notes];
+	if (kind === "synology") notes.push("群晖 Chat 没有独立标题字段：标题模板不参与发送（需要标题请在正文模板里用 {{title}} 嵌入）");
+	if (!Array.isArray(payload?.pages)) notes.push("预览未给 pages（发送时的 legacy 正文）⇒ 用空样本按同款组稿函数现组；真实发送会带真实标题/正文/问答");
 	return {
-		...base, mode: "custom",
-		title: r.title,
-		body: r.pages.join("\n"),
-		pages: r.pages,
-		notes: r.notes,
-		used: r.used
+		kind, type, deviceId: device?.id ?? null, templateId: eff.templateId ?? tplRec?.id ?? "", templateName: eff.templateName ?? tplRec?.name ?? "",
+		source: { title: eff.titleSource, body: eff.bodySource },
+		delivery, warnings, titleSupported: kind === "bark",
+		mode: built.tpl.mode,
+		title: built.title,
+		body: built.pages.join("\n"),
+		pages: built.pages,
+		notes
 	};
 }
 
@@ -1701,7 +1923,28 @@ export const SEG_KEYS = SEG_SPECS.map((s) => s.key);
 /** 默认值表（键 ⇒ `true`）。 */
 export const SEG_DEFAULTS = Object.fromEntries(SEG_SPECS.map((s) => [s.key, s.def]));
 /** ★生效面（`#A449` ⑥）：**只有「对话（回合级）」组四项**读设备分隔符；其余类型（含 `test`）恒走默认。 */
-export const PAYLOAD_TYPES = new Set(["task.done", "task.asking", "task.interrupted", "subagent.done"]);
+export const PAYLOAD_TYPES = new Set(["task.done", "task.asking", "task.interrupted", "subagent.done", "team.member.done"]);
+
+/** 2026-11-24（task-10）：**默认不推送**的可路由类型（用户口径：团队成员通知单独开关、默认关）。
+ *  `resolveRouteIds` 对其实例化前**不落 routeDefault 兜底**；设置页显式写入 routes[type] 即按配置推送。 */
+export const DEFAULT_OFF_TYPES = new Set(["team.member.done"]);
+
+/**
+ * 2026-11-24（task-10）：turn/end 的 type 判定（纯函数；离线判据与在线发射同源）。
+ * - 主会话 ⇒ task.done（不受本改动影响）
+ * - 子会话 + 团队成员判定 ok ⇒ team.member.done
+ * - 子会话 + 判定取不到/非成员 ⇒ 回退 subagent.done（如实降级；不猜测）
+ * @param {{isChild?:boolean, teamMember?:{ok?:boolean,isMember?:boolean}|null}} input
+ * @returns {"task.done"|"team.member.done"|"subagent.done"}
+ */
+export function doneTypeFor({ isChild = false, teamMember = null } = {}) {
+	if (isChild !== true) return "task.done";
+	return teamMember && teamMember.ok === true && teamMember.isMember === true ? "team.member.done" : "subagent.done";
+}
+
+/** 团队判定降级诊断（取不到 ⇒ 回退 subagent.done；本读数经 snapshotHub 暴露，禁静默）。 */
+const teamSeamState = { calls: 0, ok: 0, fallback: 0, lastReason: "" };
+export function teamSeamStatus() { return { ...teamSeamState }; }
 
 // ============================================================================
 // 2026-11-22 v0.9.0：**通知格式完全自定义（{{占位符}}）+ 渠道参数**
@@ -1756,6 +1999,7 @@ const TYPE_STATUS = {
 	"task.asking": ["⁉️", "需要你回应"],
 	"task.interrupted": ["❌", "回合被中断"],
 	"subagent.done": ["🤖", "子 agent 完成"],
+	"team.member.done": ["👥", "智能体团队成员完成"],
 	"test": ["🔔", "测试推送"],
 	"cost.alert": ["💰", "费用提醒"],
 	"queue.dispatched": ["⛰", "队列派发"],
@@ -2016,6 +2260,63 @@ export function renderForDevice({ kind, tpl, vars, seps }) {
 	const pages = splitTemplatedText(kind, bodyR.text, seps);
 	if (!pages.length) notes.push("模板渲染结果为空 ⇒ 已回退旧版组稿（不静默）");
 	return { title: titleR.text, pages, notes, used: [...new Set([...titleR.used, ...bodyR.used])] };
+}
+
+/**
+ * 模板应用到「已组好的 legacy 正文」——**发送与预览共用同一入口**（task-17「所见即所得」）。
+ * 输入/输出与发送路径逐字一致：legacyPages（生产者按 seps/segs 组好的页；preview 用同款组稿函数自组）
+ * → 设备/kind 生效模板 → renderForDevice 同逻辑 → splitTemplatedText；空渲染回退 legacy（如实 note）。
+ */
+export function applyTemplateForDevice({ device, type, title, legacyPages, seps, varsExtra = {}, tplList = null } = {}) {
+	const list = tplList ?? currentTemplateList();
+	const d = device ?? { id: "preview", name: "预览设备", kind: "synology" };
+	const pagesIn = asArray(legacyPages).map((p) => String(p));
+	const eff = effectiveTemplateFor(d, list);
+	let titleOut = String(title ?? "");
+	let pagesOut = pagesIn;
+	const notes = [];
+	if (eff.missing) notes.push(`设备选择的模板 "${eff.selectedTemplateId}" 不存在 ⇒ 已回落 "${eff.templateName}"（不静默）`);
+	if (eff.title || eff.body) {
+		const vars = buildTemplateVars({ type, title, pages: pagesIn, seps, device: d, extra: { ...varsExtra, tplEmoji: eff.emoji } });
+		if (eff.title) {
+			const tr = renderTemplate(eff.title, vars);
+			if (tr.unknown.length) notes.push(`标题模板含未知占位符：${tr.unknown.map((k) => `{{${k}}}`).join("、")}（原样保留）`);
+			if (d.kind === "bark" && tr.text.trim()) titleOut = tr.text;
+		}
+		if (eff.body) {
+			const br = renderTemplate(eff.body, vars);
+			if (br.unknown.length) notes.push(`正文模板含未知占位符：${br.unknown.map((k) => `{{${k}}}`).join("、")}（原样保留）`);
+			const p = splitTemplatedText(d.kind, br.text, seps);
+			if (p.length) pagesOut = p;
+			else notes.push("模板渲染结果为空 ⇒ 已回退旧版组稿（不静默）");
+		}
+	}
+	return { title: titleOut, pages: pagesOut, notes, tpl: { mode: eff.body ? "custom" : "legacy", titleSource: eff.titleSource, bodySource: eff.bodySource } };
+}
+
+/** 模板变量白名单（= buildTemplateVars 可产出的键；模板诊断用）。 */
+export const TEMPLATE_VAR_KEYS = new Set(TPL_PLACEHOLDERS.map((p) => p.key));
+
+/**
+ * 模板合法性警告（2026-11-24 task-17：预览/保存时可见；**不改发送侧兼容行为**）。
+ * - 花括号不配对（含 `{{{body}}` 这类连续三左花括号笔误、孤立 `{`/`}`）；
+ * - 未知占位符（`{{nope}}`；发送侧仍按原样保留）。
+ */
+export function templateWarnings(text) {
+	const out = [];
+	const s = String(text ?? "");
+	if (!s) return out;
+	if (s.includes("{{{")) out.push({ code: "triple-brace", message: "检测到连续三个左花括号 {{{（常见笔误，如 {{{body}}）⇒ 渲染会多出字面花括号" });
+	let depth = 0, minDepth = 0;
+	for (const ch of s) {
+		if (ch === "{") depth++;
+		else if (ch === "}") { depth--; if (depth < minDepth) minDepth = depth; }
+	}
+	if (depth !== 0 || minDepth < 0) out.push({ code: "unbalanced-braces", message: `花括号不配对（${depth > 0 ? "少 " + depth + " 个右花括号" : depth < 0 ? "多 " + (-depth) + " 个右花括号" : "存在多余的右花括号"}）⇒ 渲染结果可能出现字面花括号` });
+	const unknown = [];
+	for (const m of s.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)) if (!TEMPLATE_VAR_KEYS.has(m[1]) && !unknown.includes(m[1])) unknown.push(m[1]);
+	if (unknown.length) out.push({ code: "unknown-placeholders", message: `未知占位符：${unknown.map((k) => "{{" + k + "}}").join("、")}（发送时按原样保留，不替换）` });
+	return out;
 }
 
 /** 预览用默认样例（`preview` RPC；不写盘、不发网络）。 */
@@ -2981,7 +3282,30 @@ export async function apply(ctx, config) {
 		 *     未加会话维度（本件范围外，如实登记）。
 		 *   ★**不受本改动影响**：宿主 `dsh-subagent` 注入的 `subagent-settled` notice 及其**唤醒父会话**行为（用户已裁「不做」）。 */
 		const isChild = isChildSession(session);
-		const doneType = isChild ? "subagent.done" : "task.done";
+		// 2026-11-24（task-10，v0.9.8）：**Agent Teams 团队成员**单独可路由类型。
+		//   判定经 host-compat seam `agentTeams → teamMemberOf(session)`（R7：团队服务接触点在中间件，
+		//   本插件不直连）；取不到（seam 缺/服务未就绪/agent 非 live/非成员）⇒ **回退 subagent.done**
+		//   并如实记诊断（teamSeamState + debug + 首见 warn），不静默、不改 subagent.done 既有语义。
+		let teamMember = null;
+		let teamSeamReason = "";
+		if (isChild) {
+			teamSeamState.calls += 1;
+			const teamFn = seamFn("agentTeams");
+			if (!teamFn) teamSeamReason = "seam-missing";
+			else {
+				try {
+					const r = teamFn(session);
+					if (r?.ok === true) { teamMember = r; teamSeamState.ok += 1; }
+					else teamSeamReason = String(r?.reason ?? "unknown");
+				} catch (err) { teamSeamReason = `threw:${String(err?.message ?? err)}`; }
+			}
+			if (teamSeamReason) {
+				teamSeamState.fallback += 1;
+				teamSeamState.lastReason = teamSeamReason;
+				debug(`turn/end: 团队判定取不到 (${teamSeamReason}) ⇒ 回退 subagent.done sid=${String(session.id ?? "").slice(0, 12)}`);
+			}
+		}
+		const doneType = doneTypeFor({ isChild, teamMember });
 		const elapsed = Date.now() - start.startTs;
 		if (!hubHasChannel) return;
 		// v0.7.0 (§3): 门槛取 options.minTurnMs (设置卡可改, 立即生效); patch 配置只提供初值
@@ -3001,7 +3325,11 @@ export async function apply(ctx, config) {
 		const rawA = lastAssistantAnswer(session);
 		if (elapsed < thresholdMs) return;
 		const summary = extractSummary(rawA);
-		const title = `✅ 任务完成 · ${titleOrShort(session, sidShort)}`;
+		const doneMeta = TYPE_STATUS[doneType] ?? ["", ""];
+		// 团队团队成员：标题用其自身文案（主会话/普通子 agent 的标题与改前逐字不变）
+		const title = doneType === "team.member.done"
+			? `${doneMeta[0] || "👥"} ${doneMeta[1] || "智能体团队成员完成"} · ${titleOrShort(session, sidShort)}`
+			: `✅ 任务完成 · ${titleOrShort(session, sidShort)}`;
 		const footer = `回合 #${turn} 完成 (用时 ${fmtElapsed(elapsed)}) · 原因: ${reasonText} · 会话 ${sidShort}`;
 		const pages = composeSynologyPages(title, stripMarkdown(rawQ), stripMarkdown(rawA), footer);
 		// 件B: composer 供「按设备分隔符」重排（未配置设备的 seps ＝ 默认 ⇒ 与 pages 逐字相同）
@@ -3010,10 +3338,11 @@ export async function apply(ctx, config) {
 		// v0.7.0 (§2 映射): 回合结束推送走独立 type task.done
 		// `#A424`: 子 agent 会话（`origin === "subagent"`）改走 subagent.done（**可独立选渠道/关闭**）——
 		// 只换 type，其余（阈值命中、路由规则、正文分页）逐字同路；**不特判、不播种 hub**。
-		debug(`turn/end: type=${doneType}${isChild ? " (子 agent 会话)" : ""} turn=${turn} sid=${sid.slice(0, 12)}`);
+		debug(`turn/end: type=${doneType}${doneType === "team.member.done" ? " (团队成员会话)" : isChild ? " (子 agent 会话)" : ""} turn=${turn} sid=${sid.slice(0, 12)}${teamSeamReason ? ` teamSeamFallback=${teamSeamReason}` : ""}`);
 		// v0.9.0: 传 vars 供自定义模板使用（未配置模板时零影响；模板里的 {{title}} 仍是完整标题）
 		void sendByType(doneType, title, pages, composeForDevice, {
-			status: isChild ? "子 agent 完成" : "任务完成", emoji: isChild ? "🤖" : "✅",
+			status: doneMeta[1] || (isChild ? "子 agent 完成" : "任务完成"),
+			emoji: doneMeta[0] || (isChild ? "🤖" : "✅"),
 			session: titleOrShort(session, sidShort), sid: sidShort, turn,
 			elapsed: fmtElapsed(elapsed), elapsedMs: elapsed, reason: reasonText,
 			question: stripMarkdown(rawQ), answer: stripMarkdown(rawA), footer, summary

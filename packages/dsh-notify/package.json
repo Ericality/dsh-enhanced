@@ -1,7 +1,7 @@
 {
   "name": "@ericality/dsh-notify",
-  "version": "0.9.7",
-  "description": "通知中枢：Bark 多设备与群晖 Chat 推送，逐类型路由、每渠道参数与自定义模板，含独立通知页。",
+  "version": "0.10.0",
+  "description": "通知中枢：Bark 多设备与群晖 Chat 推送，逐类型路由、每渠道参数与自定义模板，含独立通知页。；v0.9.9（2026-11-24 task-16）配置与状态 MVP：设备发送健康记录（成功/失败/错误分类/连续失败/耗时，持久化 device-health.json）+ get 增 health/config（配置元信息/路由与模板摘要/默认差异）+ 设置页只读「当前配置与状态」区（密钥仅尾号）。；v0.10.0（2026-11-24 task-17）模板所见即所得最小改：预览与发送共用 applyTemplateForDevice 同一渲染入口/同一数据装配（预览返回按渠道最终 title/body/分页 + 群晖无标题等渠道差异标注 + 与发送逐字一致）；模板花括号不配对/未知占位符在预览与保存时可见警告（不阻断保存、不改发送兼容行为）；notify 测试脚本入口新增生产路径硬校验（DSH_HOME 落在宿主生产数据根 ⇒ 拒绝运行 exit 2）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -46,13 +46,14 @@
     }
   },
   "dshCompat": {
-    "host": "^0.2.2-rc.1",
+    "host": ">=0.2.2-rc.1 <0.3.0",
     "seams": [
       "sessionEvents",
       "sessionAppend",
       "eventTypeRegistry",
       "rpcHandle",
-      "commands"
+      "commands",
+      "agentTeams"
     ],
     "blocked": [
       "eventTypeRegistry"
@@ -60,7 +61,7 @@
   },
   "dependencies": {
     "@ericality/dsh-banner-kit": "0.1.0",
-    "@ericality/dsh-host-compat": "0.1.1",
+    "@ericality/dsh-host-compat": "0.1.2",
     "@ericality/dsh-reconcile": "0.1.1"
   },
   "files": [

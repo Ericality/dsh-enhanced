@@ -1,6 +1,6 @@
 {
   "name": "@ericality/dsh-bg-image",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "description": "页面背景壁纸：每日（Bing 直连）、文件夹随机（every/daily/interval）与自定义图片，服务端保存且所有浏览器统一。",
   "type": "module",
   "main": "lib/index.js",

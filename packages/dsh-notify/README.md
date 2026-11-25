@@ -1,9 +1,9 @@
-# @ericality/dsh-notify v0.9.2
+# @ericality/dsh-notify v0.10.0
 
-安装：`dsh plugin --profile web add @ericality/dsh-notify@0.9.7`
+安装：`dsh plugin --profile web add @ericality/dsh-notify@0.10.0`
 
 
-安装：`dsh plugin --profile web add @ericality/dsh-notify@0.9.7`
+安装：`dsh plugin --profile web add @ericality/dsh-notify@0.10.0`
 
 
 DSH 通知中枢：**Bark 多设备 + 群晖 Chat**，支持逐项路由、每渠道参数、`{{占位符}}` 完全自定义通知格式，并同时提供：

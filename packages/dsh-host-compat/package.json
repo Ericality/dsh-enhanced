@@ -1,7 +1,7 @@
 {
   "name": "@ericality/dsh-host-compat",
-  "version": "0.1.1",
-  "description": "插件共享底座：宿主能力探测 + 三态 (OK/DEGRADED/BLOCKED) + seam 纯函数库 + 适配状态聚合 + /host-compat RPC + 降级横幅。",
+  "version": "0.1.2",
+  "description": "插件共享底座：宿主能力探测 + 三态 (OK/DEGRADED/BLOCKED) + seam 纯函数库 + 适配状态聚合 + /host-compat RPC + 降级横幅；v0.1.2 增补 r6 agentTeams 能力键与 teamMemberOf seam（Agent Teams 团队成员判定，R7 中间件单点）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

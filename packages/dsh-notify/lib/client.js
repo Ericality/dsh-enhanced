@@ -56,6 +56,7 @@ window.__ModuleLoader__.load({
 			{ type: "task.interrupted", label: "回合被中断（重启后补推）", group: "DSH-任务", level: "active", hasProducer: true },
 			// 2026-10-02（`#A424`）第 15 项：子 agent 会话的回合结束走本 type（与 task.done 同组同档，仅"选渠道"独立）
 			{ type: "subagent.done", label: "子 agent 完成（回合结束汇总）", group: "DSH-任务", level: "active", hasProducer: true },
+			{ type: "team.member.done", label: "智能体团队成员完成", group: "DSH-任务", level: "active", hasProducer: true },
 			{ type: "cost.alert", label: "费用提醒", group: "DSH-费用", level: "active", hasProducer: true },
 			{ type: "queue.dispatched", label: "队列派发", group: "DSH-队列", level: "passive", hasProducer: true },
 			{ type: "queue.cancelled", label: "队列取消", group: "DSH-队列", level: "passive", hasProducer: true },
@@ -73,6 +74,7 @@ window.__ModuleLoader__.load({
 			"task.asking": "⁉️",
 			"task.interrupted": "❌",
 			"subagent.done": "🤖",
+			"team.member.done": "👥",
 			"auth.login_failed": "🔒",
 			"auth.locked": "🔒",
 			"auth.unlocked": "🔓",
@@ -86,6 +88,7 @@ window.__ModuleLoader__.load({
 
 		/** 行内补充说明 —— 逐字取自已确认预览 public/preview-notify-settings.html（仅这 3 行有 note）。 */
 		const ROW_NOTES = {
+			"team.member.done": "Agent Teams 团队成员会话回合结束；默认不推送，需在此单独选渠道开启",
 			"task.done": "回合耗时 ≥ 阈值时推送完整问答（原来和下面两项共用一个 type）",
 			"task.asking": "agent 调用提问工具时立即推，不受阈值限制",
 			"task.interrupted": "容器重启致回合中断时补一条，含去重标记"
@@ -93,7 +96,7 @@ window.__ModuleLoader__.load({
 
 		/** 契约 §5 客户端分组（组内保持服务端顺序; hasProducer===false 一律进预留折叠区, 不在这里匹配）。 */
 		const GROUPS = [
-			{ title: "对话（回合级）", match: function (t) { return t === "task.done" || t === "task.asking" || t === "task.interrupted" || t === "subagent.done"; } },
+			{ title: "对话（回合级）", match: function (t) { return t === "task.done" || t === "task.asking" || t === "task.interrupted" || t === "subagent.done" || t === "team.member.done"; } },
 			{ title: "登录安全（由 auth-proxy 发送）", match: function (t) { return t.indexOf("auth.") === 0; } },
 			{ title: "其它", match: function (t) { return t === "test"; } }
 		];
@@ -514,6 +517,23 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 		function injectCss() {
 			if (typeof document === "undefined") return;
 			if (document.getElementById("dsh-nt-card-css")) return;
+			// 2026-11-24（task-16）「当前配置与状态」只读区样式（窄屏横向滚动；不新增主题色）
+			try {
+				var stS = document.createElement("style");
+				stS.id = "dsh-nt-status-css";
+				stS.textContent = [
+					".nt-status{display:flex;flex-direction:column;gap:10px;min-width:0}",
+					".nt-status-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}",
+					".nt-status-table{border-collapse:collapse;width:100%;font-size:11.5px;min-width:680px}",
+					".nt-status-table th,.nt-status-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:5px 8px;text-align:left;white-space:nowrap}",
+					".nt-status-table th{color:var(--dsw-alias-label-tertiary);font-weight:600}",
+					".nt-status-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 14px;font-size:11.5px;color:var(--dsw-alias-label-secondary)}",
+					".nt-status-meta code{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:10.5px;word-break:break-all;white-space:normal}",
+					".nt-status-err{color:var(--dsw-alias-state-warn-primary,#f59e0b)}",
+					"@media (max-width:720px){.nt-status-table{min-width:560px}}"
+				].join("");
+				(document.head || document.documentElement).appendChild(stS);
+			} catch (e) { /* 样式失败不影响功能 */ }
 			var st = document.createElement("style");
 			st.id = "dsh-nt-card-css";
 			st.textContent = [
@@ -1927,13 +1947,28 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 				if (!pr) return null;
 				if (pr.pending) return h("div", { className: "nt-hint" }, "预览中…（零网络、零写盘）");
 				if (pr.error) return h("div", { className: "nt-pay-note" }, "✗ " + pr.error);
+				// 2026-11-24（task-17）：预览与发送同源 ⇒ 直接展示「按渠道最终发送」字段（含分页/seps/segs/模板覆盖）
+				var dv = pr.delivery || null;
+				var titleSupported = pr.titleSupported !== false;
+				var head = [
+					"实际发送（与服务端发送同源）",
+					"｜渠道 " + String(pr.kind || "?"),
+					"｜共 " + (Array.isArray(pr.pages) ? pr.pages.length : 1) + " 条",
+					pr.source ? "｜标题来源 " + String(pr.source.title || "legacy") + " · 正文来源 " + String(pr.source.body || "legacy") : ""
+				].join("");
+				var titleLine = titleSupported
+					? ("标题：" + String((dv && dv.title) || pr.title || "") + "\n")
+					: "标题：（群晖 Chat 无独立标题字段 ⇒ 不参与发送；如需标题请写入正文模板的 {{title}}）\n";
+				var bodyText = dv
+					? (dv.kind === "bark" ? String(dv.body || "") : (Array.isArray(dv.pages) ? dv.pages.join("\n\n---- 分页 ----\n\n") : String(pr.body || "")))
+					: String(pr.body || "");
+				var warns = (Array.isArray(pr.warnings) && pr.warnings.length)
+					? h("div", { className: "nt-pay-note", "data-tpl-warnings": "1", style: { color: "var(--dsw-alias-state-warn-primary,#f59e0b)" } }, "模板警告：" + pr.warnings.map(function (w) { return String(w.message || w.code || ""); }).join("；"))
+					: null;
 				return h("div", { style: { display: "flex", flexDirection: "column", gap: 5 } }, [
-					h("div", { className: "nt-hint" }, [
-						pr.mode === "custom" ? "自定义模板渲染结果" : "旧版格式（legacy）预览",
-						"｜共 " + (Array.isArray(pr.pages) ? pr.pages.length : 1) + " 条",
-						pr.source ? "｜标题来源 " + String(pr.source.title || "legacy") + " · 正文来源 " + String(pr.source.body || "legacy") : ""
-					]),
-					h("pre", { className: "nt-tpl-prev", "data-tpl-preview": "1" }, [pr.title ? "标题：" + pr.title + "\n" : "", pr.body || ""].join("")),
+					h("div", { className: "nt-hint" }, head),
+					h("pre", { className: "nt-tpl-prev", "data-tpl-preview": "1" }, titleLine + bodyText),
+					warns,
 					(Array.isArray(pr.notes) && pr.notes.length) ? h("div", { className: "nt-pay-note" }, pr.notes.join("；")) : null
 				]);
 			}
@@ -1978,7 +2013,11 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 						h("button", { type: "button", className: "nt-btn", disabled: busy, onClick: function () { tplApplyExample(dev); } }, "填入示例")
 					]),
 					liveToolbarEl(),
-					livePreviewEl(merged, dev, "本设备实际生效", prevSample),
+					h("div", { className: "nt-acts", style: { marginLeft: 0 } }, [
+						h("button", { type: "button", className: "nt-btn", disabled: busy, "data-tpl-preview": dev.id, onClick: function () { tplPreview(dev); } }, "预览实际发送（与发送同源）")
+					]),
+					tplPreviewBox(tplPrev[dev.id]),
+					livePreviewEl(merged, dev, "编辑示意（非最终；最终以上方服务端预览为准）", prevSample),
 					notes.length ? h("div", { className: "nt-pay-grid" }, notes.map(function (x, i) { return h("span", { className: "nt-pay-note", key: "tn" + i }, x); })) : null
 				]);
 			}
@@ -2177,8 +2216,20 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 							h("span", { className: "nt-h" }, "实时预览"),
 							h("span", { className: "nt-hint" }, tplEdit ? "编辑中" : "所选模板")
 						]),
-						liveToolbarEl(),
-						pick ? livePreviewEl(pick, previewDeviceOf(), tplEdit ? "编辑中" : "所选模板", prevSample) : h("div", { className: "nt-hint" }, "还没有模板"),
+						h("div", { className: "nt-acts", style: { marginLeft: 0 } }, [
+							h("button", {
+								type: "button", className: "nt-btn nt-btn-solid", disabled: busy, "data-tpl-lib-preview": "1",
+								onClick: function () {
+									var dev = previewDeviceOf();
+									setTplLibPrev({ pending: true });
+									props.preview({ deviceId: dev ? dev.id : undefined, templateId: pick ? pick.id : undefined, type: "task.done" }).then(function (res) {
+										if (res && res.ok && res.value) setTplLibPrev(res.value); else setTplLibPrev({ error: errText(res, "预览失败") });
+									}, function () { setTplLibPrev({ error: "预览失败（请求被拒/断链）" }); });
+								}
+							}, "预览实际发送（与发送同源）")
+						]),
+						tplPreviewBox(tplLibPrev),
+						pick ? livePreviewEl(pick, previewDeviceOf(), "编辑示意（非最终；最终以上方服务端预览为准）", prevSample) : h("div", { className: "nt-hint" }, "还没有模板"),
 						h("label", { className: "nt-chk", key: "sample" }, [
 							h("input", {
 								type: "checkbox", checked: prevSample,
@@ -2748,7 +2799,7 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 						// ---- v0.9.3（2026-11-23，用户确认方案 A）：顶部四 Tab ＋ 右侧抽屉 ----
 			var tabCounts = { channels: devices.length, templates: serverTemplates.length, routes: activeTypes.length };
 			var tabsEl = h("div", { className: "nt-tabs", role: "tablist" }, [
-				["channels", "渠道"], ["templates", "模板库"], ["routes", "路由"], ["advanced", "高级"]
+				["channels", "渠道"], ["templates", "模板库"], ["routes", "路由"], ["advanced", "高级"], ["status", "状态"]
 			].map(function (pair) {
 				var k = pair[0];
 				return h("button", {
@@ -2806,6 +2857,129 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 				])
 			]);
 
+			// ---- 2026-11-24（task-16）：当前配置与状态（只读；用户已批「配置可以暴露」） ----
+			// 数据面 = 服务端 get 的 `health`（设备健康记录）+ `config`（配置元信息）+ 既有 devices/routes/effective/templates。
+			// 脱敏：只显示服务端回的 urlTail / 已 sanitize 的错误详情；本组件不做任何写操作、不影响发送行为。
+			var HEALTH_CLASS_CN = {
+				timeout: "超时", connect: "连接失败", tls: "TLS/证书",
+				http_413: "页面 413", http_4xx: "HTTP 4xx", http_5xx: "HTTP 5xx",
+				protocol: "协议拒绝", unknown: "未知"
+			};
+			function fmtWhen(iso) {
+				try { return new Date(iso).toLocaleString("zh-CN", { hour12: false }); } catch (e) { return String(iso || "—"); }
+			}
+			function statusSectionEl() {
+				var d0 = data || {};
+				var health = d0.health && typeof d0.health === "object" ? d0.health : null;
+				var cfg = d0.config && typeof d0.config === "object" ? d0.config : null;
+				var hmap = {};
+				if (health && Array.isArray(health.devices)) health.devices.forEach(function (x) { if (x && x.deviceId) hmap[x.deviceId] = x; });
+				var errLabel = function (cls) { return cls ? (HEALTH_CLASS_CN[cls] || String(cls)) : "—"; };
+				var bars = [];
+				bars.push(h("div", { className: "nt-bar", key: "bar" }, [
+					h("span", { className: "nt-h", key: "t" }, "当前配置与状态"),
+					h("span", { className: "nt-hint", key: "h" }, "只读；密钥只显示尾号；错误分类来自最近一次真实发送记录"),
+					h("span", { className: "nt-bar-r", key: "r" }, [
+						h("button", {
+							type: "button", className: "nt-btn", key: "refresh", "data-status-refresh": "1",
+							disabled: busy, onClick: function () { try { props.refresh(); } catch (e) { /* 刷新失败保持只读 */ } }
+						}, "刷新")
+					])
+				]));
+				if (!health && !cfg) {
+					bars.push(h("div", { className: "nt-hint", key: "old" }, "当前 host 未返回 health/config 字段（重启 dsh web 加载新版插件后可见）。"));
+					return h("div", { className: "nt-status", "data-notify-status": "1" }, bars);
+				}
+				// ① 配置元信息
+				if (cfg) {
+					var meta = [
+						["配置文件", cfg.file || "—"],
+						["最后修改", cfg.mtime ? fmtWhen(cfg.mtime) : "—"],
+						["hub 版本 / 插件版本", String(cfg.hubVersion ?? "?") + " / " + String(cfg.pluginVersion ?? "?")],
+						["迁移标记", cfg.migratedAt ? fmtWhen(cfg.migratedAt) : "（无）"],
+						["设备", String(cfg.deviceCount ?? 0) + " 台（启用 " + String(cfg.enabledCount ?? 0) + "）"],
+						["模板", String(cfg.templateCount ?? 0) + " 个（自定义 " + String(cfg.customTemplateCount ?? 0) + "）"],
+						["默认路由", (Array.isArray(cfg.routeDefault) && cfg.routeDefault.length) ? cfg.routeDefault.join(", ") : "（空 = 全部启用设备）"],
+						["与默认差异", (function () {
+							var dd = cfg.defaultsDiff || {}; var parts = [];
+							if (Array.isArray(dd.options) && dd.options.length) parts.push("全局参数 " + dd.options.length + " 项已改");
+							if (dd.routeDefaultIsDefault === false) parts.push("默认路由已改");
+							if (Array.isArray(dd.templatesEdited) && dd.templatesEdited.length) parts.push("内置模板已改");
+							if (dd.devicesWithCustomSeps) parts.push("自定义分隔符 " + dd.devicesWithCustomSeps + " 台");
+							if (dd.devicesWithCustomSegs) parts.push("自定义内容段 " + dd.devicesWithCustomSegs + " 台");
+							if (dd.devicesWithOverrides) parts.push("模板覆盖 " + dd.devicesWithOverrides + " 台");
+							return parts.length ? parts.join(" · ") : "（全部为默认值）";
+						})()],
+						["健康记录", String(health && health.file || cfg.healthFile || "—") +
+							(health && health.updatedAt ? " · 更新 " + fmtWhen(health.updatedAt) : "") +
+							(health && health.writeError ? " · 写盘失败: " + health.writeError : "")]
+					];
+					bars.push(h("div", { className: "nt-status-meta", key: "meta", "data-status-meta": "1" },
+						meta.map(function (pair, i) {
+							return h("div", { key: "m" + i }, [h("b", null, pair[0] + "："), h("code", null, String(pair[1]))]);
+						})));
+				}
+				// ② 设备表
+				bars.push(h("div", { className: "nt-h", key: "dev-h" }, "设备"));
+				bars.push(h("div", { className: "nt-status-wrap", key: "dev-wrap" }, h("table", { className: "nt-status-table", "data-status-devices": "1" }, [
+					h("thead", { key: "thead" }, h("tr", null, [
+						h("th", { key: "n" }, "名称"), h("th", { key: "k" }, "类型"), h("th", { key: "e" }, "启用"),
+						h("th", { key: "u" }, "地址尾号"), h("th", { key: "ok" }, "最近成功"), h("th", { key: "f" }, "最近失败"),
+						h("th", { key: "c" }, "错误分类"), h("th", { key: "x" }, "连续失败")
+					])),
+					h("tbody", { key: "tbody" }, devices.map(function (dev) {
+						var st = hmap[dev.id] || null;
+						var cls = st && st.lastErrorClass ? st.lastErrorClass : null;
+						return h("tr", { key: "d:" + dev.id, "data-status-device": dev.id }, [
+							h("td", { key: "n" }, String(dev.name || dev.id)),
+							h("td", { key: "k" }, kindLabel(dev.kind)),
+							h("td", { key: "e" }, dev.enabled === false ? "停用" : "启用"),
+							h("td", { key: "u" }, h("code", null, String(dev.urlTail || "—"))),
+							h("td", { key: "ok" }, st && st.lastOkAt ? fmtWhen(st.lastOkAt) : "—"),
+							h("td", { key: "f" }, st && st.lastFailAt ? fmtWhen(st.lastFailAt) : "—"),
+							h("td", { key: "c", className: cls ? "nt-status-err" : null }, cls
+								? (errLabel(cls) + (st.lastErrorDetail ? "（" + st.lastErrorDetail + "）" : ""))
+								: "—"),
+							h("td", { key: "x" }, st && st.consecutiveFails ? String(st.consecutiveFails) : "0")
+						]);
+					}))
+				])));
+				// ③ 路由摘要（按 type：配置值 / 生效值）
+				if (cfg && Array.isArray(cfg.routes)) {
+					var devName = {};
+					devices.forEach(function (dv) { devName[dv.id] = dv.name || dv.id; });
+					var cfgLabel = { inherit: "默认（继承）", custom: "自选", off: "关闭（显式空）" };
+					bars.push(h("div", { className: "nt-h", key: "route-h" }, "路由摘要"));
+					bars.push(h("div", { className: "nt-status-wrap", key: "route-wrap" }, h("table", { className: "nt-status-table", "data-status-routes": "1" }, [
+						h("thead", { key: "thead" }, h("tr", null, [h("th", { key: "t" }, "通知类型"), h("th", { key: "c" }, "配置"), h("th", { key: "e" }, "生效设备")])),
+						h("tbody", { key: "tbody" }, cfg.routes.map(function (r) {
+							return h("tr", { key: "r:" + r.type }, [
+								h("td", { key: "t" }, h("code", null, String(r.type))),
+								h("td", { key: "c" }, cfgLabel[r.configured] || String(r.configured || "—")),
+								h("td", { key: "e" }, (Array.isArray(r.effective) ? r.effective : []).map(function (id) { return devName[id] || id; }).join(", ") || "（无）")
+							]);
+						}))
+					])));
+				}
+				// ④ 模板摘要（每设备当前模板与来源）
+				if (cfg && cfg.templates && Array.isArray(cfg.templates.byDevice)) {
+					var srcLabel = { device: "设备覆盖", template: "所选模板", kind: "渠道默认", legacy: "旧版组稿" };
+					bars.push(h("div", { className: "nt-h", key: "tpl-h" }, "模板摘要"));
+					bars.push(h("div", { className: "nt-status-wrap", key: "tpl-wrap" }, h("table", { className: "nt-status-table", "data-status-templates": "1" }, [
+						h("thead", { key: "thead" }, h("tr", null, [h("th", { key: "d" }, "设备"), h("th", { key: "t" }, "模板"), h("th", { key: "s" }, "正文来源"), h("th", { key: "ti" }, "标题来源")])),
+						h("tbody", { key: "tbody" }, cfg.templates.byDevice.map(function (t) {
+							return h("tr", { key: "t:" + t.deviceId }, [
+								h("td", { key: "d" }, String(t.deviceName || t.deviceId)),
+								h("td", { key: "t" }, String(t.templateName || t.templateId || "—")),
+								h("td", { key: "s" }, srcLabel[t.bodySource] || String(t.bodySource || "—")),
+								h("td", { key: "ti" }, srcLabel[t.titleSource] || String(t.titleSource || "—"))
+							]);
+						}))
+					])));
+				}
+				return h("div", { className: "nt-status", "data-notify-status": "1" }, bars);
+			}
+
 			var channelsPane = h("div", { className: "nt-pane", key: "pane-channels", "data-pane": "channels", hidden: tab !== "channels" }, [
 				h("div", { className: "nt-bar", key: "bar" }, [
 					h("span", { className: "nt-h", key: "t" }, "渠道"),
@@ -2831,6 +3005,10 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 					h("span", { className: "nt-bar-r", key: "r" }, h("span", { className: "nt-pill nt-pill-success" }, [h("span", { className: "nt-dot", key: "d" }), "改动即存"]))
 				]),
 				typeSection
+			]);
+
+			var statusPane = h("div", { className: "nt-pane", key: "pane-status", "data-pane": "status", hidden: tab !== "status" }, [
+				statusSectionEl()
 			]);
 
 			var advancedPane = h("div", { className: "nt-pane", key: "pane-advanced", "data-pane": "advanced", hidden: tab !== "advanced" }, [
@@ -2871,6 +3049,7 @@ var UI_V2_CSS = `/* ===== v0.9.3 布局整改（方案 A：四 Tab ＋ 抽屉；
 				templatesPane,
 				routesPane,
 				advancedPane,
+				statusPane,
 				drawerEl
 			]);
 

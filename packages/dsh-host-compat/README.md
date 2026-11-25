@@ -1,6 +1,6 @@
 # @ericality/dsh-host-compat
 
-安装：`dsh plugin --profile web add @ericality/dsh-host-compat@0.1.1`
+安装：`dsh plugin --profile web add @ericality/dsh-host-compat@0.1.2`
 
 
 **插件共享底座 · 宿主适配层（host-compat v1）** — 本地辅助插件，非官方包。
